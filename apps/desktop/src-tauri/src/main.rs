@@ -2,6 +2,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    opendam_desktop_lib::run();
+    lumiadam_desktop_lib::run();
 }
 

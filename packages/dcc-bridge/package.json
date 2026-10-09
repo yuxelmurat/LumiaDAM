@@ -1,5 +1,5 @@
 {
-  "name": "@opendam/dcc-bridge",
+  "name": "@lumiadam/dcc-bridge",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -10,5 +10,11 @@
   },
   "devDependencies": {
     "typescript": "^5.6.3"
-  }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yuxelmurat/LumiaDAM.git"
+  },
+  "homepage": "https://github.com/yuxelmurat/LumiaDAM#readme"
 }

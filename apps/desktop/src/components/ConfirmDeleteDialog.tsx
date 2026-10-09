@@ -85,12 +85,12 @@ export function ConfirmDeleteDialog({
           </p>
           {isLibrary ? (
             <p className={styles.subText}>
-              This will remove the library from OpenDAM. <strong style={{ color: 'var(--color-text-main, #ffffff)' }}>Your original files on disk will NOT be deleted.</strong> To verify, type{' '}
+              This will remove the library from LumiaDAM. <strong style={{ color: 'var(--color-text-main, #ffffff)' }}>Your original files on disk will NOT be deleted.</strong> To verify, type{' '}
               <code className={styles.confirmWord}>confirm</code> below:
             </p>
           ) : isAsset ? (
             <p className={styles.subText}>
-              This will move the file to the <strong style={{ color: 'var(--color-text-main, #ffffff)' }}>Recycle Bin</strong> on your system and remove it from OpenDAM.
+              This will move the file to the <strong style={{ color: 'var(--color-text-main, #ffffff)' }}>Recycle Bin</strong> on your system and remove it from LumiaDAM.
             </p>
           ) : (
             <p className={styles.subText}>

@@ -1,5 +1,5 @@
 {
-  "name": "@opendam/desktop",
+  "name": "@lumiadam/desktop",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -15,10 +15,10 @@
   "dependencies": {
     "@react-three/drei": "^9.113.0",
     "@react-three/fiber": "^8.17.6",
-    "@tauri-apps/api": "^2.5.0",
-    "@tauri-apps/plugin-dialog": "^2.2.1",
-    "@tauri-apps/plugin-fs": "^2.4.0",
-    "@tauri-apps/plugin-shell": "^2.2.1",
+    "@tauri-apps/api": "2.12.2",
+    "@tauri-apps/plugin-dialog": "2.8.1",
+    "@tauri-apps/plugin-fs": "2.6.0",
+    "@tauri-apps/plugin-shell": "2.4.1",
     "clsx": "^2.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -39,5 +39,11 @@
     "eslint": "^9.13.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.10"
-  }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yuxelmurat/LumiaDAM.git"
+  },
+  "homepage": "https://github.com/yuxelmurat/LumiaDAM#readme"
 }

@@ -1,5 +1,5 @@
 """
-OpenDAM Preview Engine
+LumiaDAM önizleme motoru
 ======================
 Worker process that generates thumbnails and metadata for asset files.
 Called by the Tauri backend via a JSON-RPC protocol over stdin/stdout.

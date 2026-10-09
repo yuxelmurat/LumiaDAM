@@ -237,7 +237,6 @@ Function PageReinstall
   ; Seamlessly replace older version in-place without prompting to uninstall or messing up data
   ${If} $R0 >= 0
     nsExec::Exec 'taskkill /F /IM "${MAINBINARYNAME}.exe" /T'
-    nsExec::Exec 'taskkill /F /IM "opendam-desktop.exe" /T'
     ReadRegStr $INSTDIR SHCTX "${MANUPRODUCTKEY}" ""
     ${If} $INSTDIR == ""
       ReadRegStr $INSTDIR SHCTX "${UNINSTKEY}" "InstallLocation"

@@ -23,7 +23,7 @@ pub fn run() {
     // Logging
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| "opendam=debug,info".parse().unwrap()),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| "lumiadam_desktop_lib=debug,info".parse().unwrap()),
         )
         .init();
 
