@@ -77,4 +77,5 @@ jobs:
       # without needing python setup or pip install
       - uses: astral-sh/ruff-action@v3
         with:
-          args: "check packages/preview-engine/"
+          args: "check"
+          src: "packages/preview-engine/"

@@ -42,3 +42,7 @@ pnpm --filter @lumiadam/desktop exec tauri icon public/brand/lumiadam-mark.png -
 README, ön yüz favicon'u ve araç çubuğu aynı amblemi kullanır. Windows için çok çözünürlüklü `icon.ico` kurulum ve executable kaynaklarına bağlanır.
 
 Imagegen yönergesinin özeti: Önceki görseldeki katlanmış L biçimli mavi/cyan amblemi ve dört eğik karoyu koru; tarayıcı arayüzünü, yazıyı ve arka planı kaldır; ortalanmış, kare ve şeffaf uygulama amblemi üret. Sonuç raster uyarlamadır.
+
+## Derleme kontrolleri
+
+Tauri JavaScript/Rust API paketleri aynı 2.12 minor sürümünü kullanır. JavaScript API 2.12.1, GitHub CI minimum yayın yaşı kuralını korumak için seçilmiştir; Rust 2.12.2 ile uyumludur. Python işinin `src` girdisi önizleme motorunu hedefler; kaynak yolu `args` içine eklenerek depo kökü de yanlışlıkla taranmaz. Kaynaklar: [Tauri sürüm eşleştirmesi](https://v2.tauri.app/develop/updating-dependencies/) ve [Ruff Action kaynak kapsamı](https://github.com/astral-sh/ruff-action#specify-a-different-source-directory).

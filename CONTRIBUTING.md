@@ -55,7 +55,7 @@ pnpm build
 
 CI, ön yüz derlemesi, Rust Clippy ve Python Ruff kontrolü içerir. Kök `pnpm test` komutu mevcut test paketi bulunduğunun kanıtı değildir; yapılandırılmış kapsamlı bir test paketi yoktur. Başarısız kontrolü geçti diye raporlamayın; kullanılan sürümleri ve ilk ilgili hatayı PR'a yazın.
 
-Tauri derlemesi JavaScript/Rust sürüm uyuşmazlığı bildirirse gerçek sürümleri `pnpm --filter @lumiadam/desktop exec tauri info` ile inceleyin. Sürüm kontrolünü atlamayın. Bu dönüşümde tekrar derlemeyi engelleyen dört paket hizalanmıştır: Tauri 2.12.2, dialog 2.8.1, fs 2.6.0, shell 2.4.1. JavaScript ve Rust taraflarında sürümler birlikte sabitlenmiştir; ileride birlikte güncelleyin. Cargo kilit dosyaları upstream'de takip edilmediğinden Rust çözümlemesi zamanla değişebilir.
+Tauri derlemesi JavaScript/Rust sürüm uyuşmazlığı bildirirse gerçek sürümleri `pnpm --filter @lumiadam/desktop exec tauri info` ile inceleyin. Sürüm kontrolünü atlamayın. Bu dönüşümde tekrar derlemeyi engelleyen dört paket hizalanmıştır: Rust Tauri 2.12.2 / JavaScript API 2.12.1 (uyumlu 2.12 minor), dialog 2.8.1, fs 2.6.0, shell 2.4.1. JavaScript ve Rust taraflarında sürümler sabitlenmiştir; ileride birlikte güncelleyin. Cargo kilit dosyaları upstream'de takip edilmediğinden Rust çözümlemesi zamanla değişebilir.
 
 Mevcut başlangıç kodunda iki ek kontrol sorunu vardır: kök `pnpm typecheck`, deneysel `packages/dcc-bridge` paketinin `tsconfig.json` dosyası olmadığı için başarısız olur; Python Ruff kontrolü `worker.py` içindeki `UP038` uyarısını bildirir. Masaüstü için yukarıdaki hedefli TypeScript/Vite kontrolünü kullanın. Bu sorunlar marka dönüşümünde işlevsel düzeltme olarak ele alınmamıştır.
 
