@@ -157,6 +157,7 @@ interface AssetStore {
   page: number;
   pageSize: number;
   loading: boolean;
+  searchError: string | null;
   query: SearchQuery;
   assetMap: Map<string, Asset>;
 
@@ -167,7 +168,7 @@ interface AssetStore {
   clearFilter: (key: keyof FilterSpec) => void;
   setSort: (field: SortField, order?: SortOrder) => void;
   setPage: (page: number) => void;
-  search: () => Promise<void>;
+  search: (delayMs?: number) => Promise<void>;
   patchAsset: (id: string, patch: Partial<Asset>) => Promise<void>;
   deleteAsset: (id: string, deleteFile?: boolean) => Promise<void>;
   deleteAssets: (ids: string[], deleteFile?: boolean) => Promise<void>;
@@ -184,12 +185,18 @@ const defaultQuery: SearchQuery = {
   includeSubcollections: true,
 };
 
+let searchRequestId = 0;
+let displayedQuery = defaultQuery;
+let displayedPage = 0;
+let displayedPageSize = 100;
+
 export const useAssetStore = create<AssetStore>()((set, get) => ({
   assets: [],
   total: 0,
   page: 0,
   pageSize: 100,
   loading: false,
+  searchError: null,
   query: defaultQuery,
   assetMap: new Map(),
 
@@ -237,15 +244,38 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
 
   setPage: (page) => set({ page }),
 
-  search: async () => {
+  search: async (delayMs = 0) => {
     const { query, page, pageSize } = get();
-    set({ loading: true });
+    const requestId = ++searchRequestId;
+    const isCurrent = () => requestId === searchRequestId &&
+      get().query === query && get().page === page && get().pageSize === pageSize;
+
+    // Yeni filtre beklerken önceki filtrenin kartlarını göstermeyelim.
+    const changed = query !== displayedQuery || page !== displayedPage || pageSize !== displayedPageSize;
+    set({
+      loading: true,
+      searchError: null,
+      ...(changed ? { assets: [], total: 0, assetMap: new Map<string, Asset>() } : {}),
+    });
     try {
+      // Yazma duraklamasını bekleyen eski istekler veritabanına hiç gönderilmez.
+      if (delayMs > 0) await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      if (!isCurrent()) return;
       const result = await api.searchAssets({ query, page, pageSize });
+      if (!isCurrent()) return;
+      displayedQuery = query;
+      displayedPage = page;
+      displayedPageSize = pageSize;
       const assetMap = new Map(result.assets.map((a) => [a.id, a]));
       set({ assets: result.assets, total: result.total, assetMap });
+    } catch (error) {
+      if (isCurrent()) {
+        console.error('Varlık araması başarısız:', error);
+        set({ searchError: 'Unable to load assets. Please try again.' });
+      }
     } finally {
-      set({ loading: false });
+      // Eski bir istek, devam eden yeni isteğin yükleme durumunu kapatamaz.
+      if (requestId === searchRequestId) set({ loading: false });
     }
   },
 

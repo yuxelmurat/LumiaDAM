@@ -44,6 +44,8 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Test search behavior
+        run: pnpm --filter @lumiadam/desktop test
       # Note: vite:build in apps/desktop already executes "tsc -b && vite build",
       # validating all TypeScript types before generating the Vite build.
       - name: Build frontend bundle
