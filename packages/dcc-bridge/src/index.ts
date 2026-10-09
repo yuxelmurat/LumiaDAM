@@ -1,5 +1,5 @@
 /**
- * OpenDAM DCC Bridge Protocol
+ * LumiaDAM DCC köprü protokolü
  * ============================
  * WebSocket-based protocol between the DAM desktop app and DCC host app plugins.
  *

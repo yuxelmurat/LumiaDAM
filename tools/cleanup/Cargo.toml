@@ -1,8 +1,10 @@
 [package]
-name = "opendam-cleanup"
+name = "lumiadam-cleanup"
 version = "0.1.0"
 edition = "2021"
-description = "OpenDAM Post-Uninstall Residual Cleanup Utility"
+license = "MIT"
+repository = "https://github.com/yuxelmurat/LumiaDAM"
+description = "LumiaDAM Post-Uninstall Residual Cleanup Utility"
 
 [profile.release]
 panic = "abort"

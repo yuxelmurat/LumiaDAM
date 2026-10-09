@@ -54,15 +54,10 @@ export function Toolbar() {
 
   return (
     <header className={styles.toolbar} data-tauri-drag-region>
-      {/* App logo + name */}
+      {/* LumiaDAM amblemi ve adı */}
       <div className={styles.brand}>
-        <div className={styles.logo}>
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2L4 6v12l8 4 8-4V6L12 2Z" fill="hsl(220 85% 50%)" opacity="0.9"/>
-            <path d="M12 2v18M4 6l8 4 8-4" stroke="hsl(220 85% 70%)" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-        </div>
-        <span className={styles.appName}>OpenDAM</span>
+        <img className={styles.logo} src="/brand/lumiadam-mark.png" alt="" />
+        <span className={styles.appName}>LumiaDAM</span>
       </div>
 
       {/* Search area with recursive subcollection filter toggle */}

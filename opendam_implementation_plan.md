@@ -1,3 +1,5 @@
+> **Tarihsel OpenDAM tasarım belgesi.** Bu dosya tamamlanmış LumiaDAM özelliklerinin listesi değildir. Güncel kapsam ve sınırlamalar için [README](README.md) dosyasına bakın.
+
 # OpenDAM — Open-Source Connecter-Style Asset Manager
 
 ## Implementation Plan (built by agentic AI coding agents)

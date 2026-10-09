@@ -1,29 +1,19 @@
-"""
-OpenDAM Blender Plugin
-======================
-Blender add-on that connects to the OpenDAM DCC bridge.
+"""LumiaDAM için deneysel Blender köprüsü.
 
-Installation:
-  Edit → Preferences → Add-ons → Install → select this file
-
-Features (Phase 3):
-  - Drag-and-drop import from OpenDAM (append/link)
-  - Material loading
-  - Save asset to DAM with auto preview generation
-  - Real-time bridge connection status
-
-Requires: Blender 3.6+ (Python 3.10+)
+Blender ayarlarından bu dosyayı eklenti olarak kurabilirsiniz.
+DCC protokolü ve paneli geliştirme aşamasındadır; üretim entegrasyonu değildir.
+Orijinal OpenDAM katkıları bl_info içindeki yazar alanında korunur.
 """
 
 bl_info = {
-    "name": "OpenDAM Bridge",
+    "name": "LumiaDAM Bridge",
     "author": "OpenDAM Contributors",
     "version": (0, 1, 0),
     "blender": (3, 6, 0),
-    "location": "View3D > Sidebar > OpenDAM",
-    "description": "Connect Blender to OpenDAM digital asset manager",
+    "location": "View3D > Sidebar > LumiaDAM",
+    "description": "Connect Blender to LumiaDAM digital asset manager",
     "category": "Import-Export",
-    "doc_url": "https://github.com/opendam/opendam",
+    "doc_url": "https://github.com/yuxelmurat/LumiaDAM",
 }
 
 import bpy
@@ -39,7 +29,7 @@ BRIDGE_URL = f"http://localhost:{BRIDGE_PORT}"
 
 
 # ── Preferences ────────────────────────────────────────────────────────────
-class OpenDAMPreferences(AddonPreferences):
+class LumiaDAMPreferences(AddonPreferences):
     bl_idname = __name__
 
     bridge_port: bpy.props.IntProperty(
@@ -56,7 +46,7 @@ class OpenDAMPreferences(AddonPreferences):
 
 # ── Operators ──────────────────────────────────────────────────────────────
 class OPENDAM_OT_ImportAsset(Operator):
-    """Import asset from OpenDAM into the current scene"""
+    """LumiaDAM varlığını mevcut sahneye aktarır"""
     bl_idname = "opendam.import_asset"
     bl_label = "Import Asset"
     bl_options = {"REGISTER", "UNDO"}
@@ -89,9 +79,9 @@ class OPENDAM_OT_ImportAsset(Operator):
 
 
 class OPENDAM_OT_SaveToDam(Operator):
-    """Export selected objects and save to OpenDAM"""
+    """Seçili nesneleri dışa aktarıp LumiaDAM için kaydeder"""
     bl_idname = "opendam.save_to_dam"
-    bl_label = "Save to OpenDAM"
+    bl_label = "Save to LumiaDAM"
     bl_options = {"REGISTER"}
 
     def execute(self, context):
@@ -114,7 +104,7 @@ class OPENDAM_OT_SaveToDam(Operator):
             )
             # Notify DAM bridge
             _notify_bridge("ASSET_SAVED", {"exportPath": tmp_path, "host": "blender"})
-            self.report({"INFO"}, "Asset sent to OpenDAM")
+            self.report({"INFO"}, "Asset sent to LumiaDAM")
         except Exception as e:
             self.report({"ERROR"}, str(e))
             return {"CANCELLED"}
@@ -124,11 +114,11 @@ class OPENDAM_OT_SaveToDam(Operator):
 
 # ── Panel ──────────────────────────────────────────────────────────────────
 class OPENDAM_PT_Panel(Panel):
-    bl_label = "OpenDAM"
+    bl_label = "LumiaDAM"
     bl_idname = "OPENDAM_PT_panel"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
-    bl_category = "OpenDAM"
+    bl_category = "LumiaDAM"
 
     def draw(self, context):
         layout = self.layout
@@ -171,7 +161,7 @@ def _notify_bridge(msg_type: str, payload: dict) -> None:
 
 # ── Registration ───────────────────────────────────────────────────────────
 CLASSES = [
-    OpenDAMPreferences,
+    LumiaDAMPreferences,
     OPENDAM_OT_ImportAsset,
     OPENDAM_OT_SaveToDam,
     OPENDAM_PT_Panel,

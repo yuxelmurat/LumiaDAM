@@ -10,10 +10,10 @@ fn main() {
     let is_silent = args.iter().any(|a| a == "--silent" || a == "-s" || a == "-y");
 
     println!("========================================================================");
-    println!("                  OpenDAM Post-Uninstall Cleanup Tool                   ");
+    println!("                  LumiaDAM Post-Uninstall Cleanup Tool                   ");
     println!("========================================================================");
     println!("This tool cleans residual app files, caches, shortcuts, and registry keys");
-    println!("left behind after uninstalling OpenDAM.\n");
+    println!("left behind after uninstalling LumiaDAM.\n");
     println!("IMPORTANT SAFETY GUARANTEE:");
     println!("  * Your asset libraries, 3D files, textures, and library databases");
     println!("    ('.opendam/library.sqlite' inside your library directories)");
@@ -23,8 +23,8 @@ fn main() {
     }
     println!("------------------------------------------------------------------------");
 
-    // 1. Terminate any running OpenDAM processes so files aren't locked
-    println!("[1/5] Checking for active OpenDAM processes...");
+    // 1. Dosya kilitlerini kaldırmak için LumiaDAM süreçlerini sonlandır.
+    println!("[1/5] Checking for active LumiaDAM processes...");
     terminate_processes(is_dry_run);
 
     let mut total_freed_bytes: u64 = 0;
@@ -99,7 +99,7 @@ fn main() {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     let file_name = entry.file_name().to_string_lossy().to_lowercase();
-                    if file_name.starts_with("opendam") || file_name.starts_with("com.opendam") {
+                    if file_name.starts_with("lumiadam") || file_name.starts_with("io.github.yuxelmurat.lumiadam") {
                         let size = calculate_dir_size(&path);
                         print!("  Removing temp item: {} ... ", path.display());
                         io::stdout().flush().ok();
@@ -133,12 +133,12 @@ fn main() {
     // 5. Clean residual registry keys
     println!("\n[5/5] Cleaning residual registry keys...");
     let reg_keys = [
-        "HKCU\\Software\\OpenDAM",
-        "HKCU\\Software\\com.opendam.desktop",
-        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OpenDAM",
-        "HKLM\\Software\\OpenDAM",
-        "HKLM\\Software\\com.opendam.desktop",
-        "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OpenDAM",
+        "HKCU\\Software\\yuxelmurat\\LumiaDAM",
+        "HKCU\\Software\\io.github.yuxelmurat.lumiadam",
+        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\LumiaDAM",
+        "HKLM\\Software\\yuxelmurat\\LumiaDAM",
+        "HKLM\\Software\\io.github.yuxelmurat.lumiadam",
+        "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\LumiaDAM",
     ];
 
     for key in &reg_keys {
@@ -175,7 +175,7 @@ fn main() {
 }
 
 fn terminate_processes(is_dry_run: bool) {
-    let procs = ["opendam.exe", "opendam-desktop.exe"];
+    let procs = ["lumiadam.exe", "lumiadam-desktop.exe"];
     for proc in procs {
         if is_dry_run {
             println!("  [DRY RUN] Would check/kill process: {}", proc);
@@ -193,36 +193,36 @@ fn get_candidate_directories() -> Vec<PathBuf> {
 
     if let Ok(appdata) = env::var("APPDATA") {
         let p = PathBuf::from(&appdata);
-        dirs.push(p.join("com.opendam.desktop"));
-        dirs.push(p.join("OpenDAM"));
+        dirs.push(p.join("io.github.yuxelmurat.lumiadam"));
+        dirs.push(p.join("LumiaDAM"));
     }
 
     if let Ok(localappdata) = env::var("LOCALAPPDATA") {
         let p = PathBuf::from(&localappdata);
-        dirs.push(p.join("com.opendam.desktop"));
-        dirs.push(p.join("OpenDAM"));
+        dirs.push(p.join("io.github.yuxelmurat.lumiadam"));
+        dirs.push(p.join("LumiaDAM"));
     }
 
     if let Ok(userprofile) = env::var("USERPROFILE") {
         let p = PathBuf::from(&userprofile);
-        dirs.push(p.join("AppData").join("LocalLow").join("com.opendam.desktop"));
-        dirs.push(p.join("AppData").join("LocalLow").join("OpenDAM"));
+        dirs.push(p.join("AppData").join("LocalLow").join("io.github.yuxelmurat.lumiadam"));
+        dirs.push(p.join("AppData").join("LocalLow").join("LumiaDAM"));
     }
 
     if let Ok(programdata) = env::var("ProgramData") {
         let p = PathBuf::from(&programdata);
-        dirs.push(p.join("OpenDAM"));
-        dirs.push(p.join("com.opendam.desktop"));
+        dirs.push(p.join("LumiaDAM"));
+        dirs.push(p.join("io.github.yuxelmurat.lumiadam"));
     }
 
     if let Ok(programfiles) = env::var("ProgramFiles") {
         let p = PathBuf::from(&programfiles);
-        dirs.push(p.join("OpenDAM"));
+        dirs.push(p.join("LumiaDAM"));
     }
 
     if let Ok(programfiles_x86) = env::var("ProgramFiles(x86)") {
         let p = PathBuf::from(&programfiles_x86);
-        dirs.push(p.join("OpenDAM"));
+        dirs.push(p.join("LumiaDAM"));
     }
 
     dirs
@@ -233,10 +233,10 @@ fn get_candidate_shortcuts() -> Vec<PathBuf> {
 
     if let Ok(userprofile) = env::var("USERPROFILE") {
         let desktop = PathBuf::from(&userprofile).join("Desktop");
-        shortcuts.push(desktop.join("OpenDAM.lnk"));
+        shortcuts.push(desktop.join("LumiaDAM.lnk"));
     }
 
-    shortcuts.push(PathBuf::from(r"C:\Users\Public\Desktop\OpenDAM.lnk"));
+    shortcuts.push(PathBuf::from(r"C:\Users\Public\Desktop\LumiaDAM.lnk"));
 
     if let Ok(appdata) = env::var("APPDATA") {
         let start_menu = PathBuf::from(&appdata)
@@ -244,8 +244,8 @@ fn get_candidate_shortcuts() -> Vec<PathBuf> {
             .join("Windows")
             .join("Start Menu")
             .join("Programs");
-        shortcuts.push(start_menu.join("OpenDAM.lnk"));
-        shortcuts.push(start_menu.join("OpenDAM"));
+        shortcuts.push(start_menu.join("LumiaDAM.lnk"));
+        shortcuts.push(start_menu.join("LumiaDAM"));
     }
 
     if let Ok(programdata) = env::var("ProgramData") {
@@ -254,8 +254,8 @@ fn get_candidate_shortcuts() -> Vec<PathBuf> {
             .join("Windows")
             .join("Start Menu")
             .join("Programs");
-        shortcuts.push(common_start_menu.join("OpenDAM.lnk"));
-        shortcuts.push(common_start_menu.join("OpenDAM"));
+        shortcuts.push(common_start_menu.join("LumiaDAM.lnk"));
+        shortcuts.push(common_start_menu.join("LumiaDAM"));
     }
 
     shortcuts

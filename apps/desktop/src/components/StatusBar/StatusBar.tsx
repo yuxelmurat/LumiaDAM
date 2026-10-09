@@ -21,7 +21,7 @@ export function StatusBar() {
         )}
       </div>
       <div className={styles.right}>
-        <span className={styles.item}>OpenDAM v0.1.0</span>
+        <span className={styles.item}>LumiaDAM v0.1.0</span>
       </div>
     </footer>
   );

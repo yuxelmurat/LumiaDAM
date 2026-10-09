@@ -59,7 +59,9 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders at info@opendam.org.
+reported to the LumiaDAM maintainer via the contact options on
+https://github.com/yuxelmurat. A dedicated private reporting channel has not
+yet been configured; do not post sensitive reports in public pull requests.
 All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the

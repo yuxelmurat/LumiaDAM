@@ -47,7 +47,7 @@ jobs:
       # Note: vite:build in apps/desktop already executes "tsc -b && vite build",
       # validating all TypeScript types before generating the Vite build.
       - name: Build frontend bundle
-        run: pnpm --filter @opendam/desktop vite:build
+        run: pnpm --filter @lumiadam/desktop vite:build
 
   # ── Rust backend ──────────────────────────────────────────────────────────
   rust:
@@ -77,4 +77,5 @@ jobs:
       # without needing python setup or pip install
       - uses: astral-sh/ruff-action@v3
         with:
-          args: "check packages/preview-engine/"
+          args: "check"
+          src: "packages/preview-engine/"

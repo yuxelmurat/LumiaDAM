@@ -1,4 +1,4 @@
-// Minimal SVG icon set for OpenDAM
+// LumiaDAM için temel SVG simgeleri
 // Each icon is a functional component accepting className/size props
 
 interface IconProps {
