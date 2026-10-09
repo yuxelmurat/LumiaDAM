@@ -16,7 +16,7 @@ const GRID_COLS: Record<'sm' | 'md' | 'lg', number> = {
 
 export function AssetGrid() {
   const { viewMode, gridSize, selectedAssetIds, selectAsset, clearSelection } = useUIStore();
-  const { assets, loading, total } = useAssetStore();
+  const { assets, loading, total, searchError, search } = useAssetStore();
 
   const tileSize = GRID_COLS[gridSize];
 
@@ -33,6 +33,20 @@ export function AssetGrid() {
     },
     [selectAsset]
   );
+
+  if (searchError) {
+    return (
+      <div className={styles.container}>
+        <FilterBar />
+        <div className={styles.empty} role="alert">
+          <p className={styles.emptyText}>{searchError}</p>
+          <button type="button" className={styles.emptyBtn} onClick={() => search()}>
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading && assets.length === 0) {
     return (

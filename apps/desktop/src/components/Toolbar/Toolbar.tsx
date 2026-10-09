@@ -47,7 +47,7 @@ export function Toolbar() {
   const handleSearch = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setQuery({ text: e.target.value });
-      search();
+      search(e.target.value ? 250 : 0);
     },
     [setQuery, search]
   );
