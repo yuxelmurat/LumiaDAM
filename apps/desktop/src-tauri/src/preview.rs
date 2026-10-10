@@ -195,7 +195,7 @@ pub fn start_preview_worker(state: Arc<AppState>) {
             for lib in libs {
                 let pool = &lib.pool;
                 let root_path = &lib.root_path;
-                let thumb_dir = root_path.join(".opendam").join("thumbs");
+                let thumb_dir = lib.catalog_dir.join("thumbs");
                 let _ = tokio::fs::create_dir_all(&thumb_dir).await;
 
                 // Poll batch of up to 10 jobs to minimize SQLite round-trip overhead
@@ -237,9 +237,9 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                     let thumb_jpg = thumb_dir.join(format!("{}_thumb.jpg", file_stem));
 
                     let existing_thumb = if thumb_png.exists() {
-                        Some(format!(".opendam/thumbs/{}_thumb.png", file_stem))
+                        Some(thumb_png.to_string_lossy().to_string())
                     } else if thumb_jpg.exists() {
-                        Some(format!(".opendam/thumbs/{}_thumb.jpg", file_stem))
+                        Some(thumb_jpg.to_string_lossy().to_string())
                     } else {
                         None
                     };
@@ -272,7 +272,7 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                             format!("{}_thumb.jpg", file_stem)
                         };
                         let thumb_dest = thumb_dir.join(&thumb_file_name);
-                        let rel_thumb = format!(".opendam/thumbs/{}", thumb_file_name);
+                        let rel_thumb = thumb_dest.to_string_lossy().to_string();
 
                         match generate_image_thumb(&full_source, &thumb_dest) {
                             Ok(()) => {

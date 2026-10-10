@@ -81,6 +81,9 @@ pub async fn search_assets(
     state: State<'_, Arc<AppState>>,
 ) -> Result<SearchResult> {
     let all_libs = state.db.get_all_libraries().await;
+    if !state.db.storage_errors.is_empty() {
+        return Err("Bazı kataloglar açılamadı. Depolama ayarlarındaki aktarım hatalarını kontrol edin.".into());
+    }
     let target_libs: Vec<(sqlx::Pool<sqlx::Sqlite>, Option<std::path::PathBuf>)> = {
         let mut list = Vec::new();
         if let Some(ref lids) = payload.query.library_ids {

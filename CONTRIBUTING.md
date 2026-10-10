@@ -61,7 +61,7 @@ Mevcut başlangıç kodunda iki ek kontrol sorunu vardır: kök `pnpm typecheck`
 
 ## Veri ve marka uyumluluğu
 
-- `.opendam/library.sqlite`, `.opendam/thumbs/` ve göreli yollar korunmalıdır. Bu bir veri biçimi adıdır.
+- Eski `.opendam` kataloglarının aktarım uyumluluğunu koruyun. Yeni katalogları kaynak arşive yazmayın; kaynak yollarını ve yerel önizleme yollarını ayırın. [Depolama düzeni](docs/storage.md).
 - Kütüphane SQLite bağlantılarındaki rollback journal yaklaşımını marka dönüşümünde değiştirmeyin.
 - `OPENDAM_PYTHON`, `OPENDAM_WORKER`, `application/opendam-asset-id` ve Blender operator kimlikleri geriye uyumluluk yüzeyleridir.
 - Yeni uygulama kimliği OpenDAM'den ayrı ayarlar oluşturur. Otomatik veri taşıma yoktur.

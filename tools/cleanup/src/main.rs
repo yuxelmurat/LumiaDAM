@@ -16,8 +16,7 @@ fn main() {
     println!("left behind after uninstalling LumiaDAM.\n");
     println!("IMPORTANT SAFETY GUARANTEE:");
     println!("  * Your asset libraries, 3D files, textures, and library databases");
-    println!("    ('.opendam/library.sqlite' inside your library directories)");
-    println!("    are NEVER touched and remain 100% safe and intact.\n");
+    println!("    (local catalogs and legacy .opendam databases) are preserved.\n");
     if is_dry_run {
         println!("[MODE: DRY RUN - No files or registry keys will be removed]");
     }
@@ -35,6 +34,10 @@ fn main() {
     let target_dirs = get_candidate_directories();
     for dir in target_dirs {
         if dir.exists() {
+            if contains_catalog(&dir) {
+                println!("  Preserving catalog data: {}", dir.display());
+                continue;
+            }
             let size = calculate_dir_size(&dir);
             print!("  Removing: {} ({}) ... ", dir.display(), format_bytes(size));
             io::stdout().flush().ok();
@@ -100,6 +103,10 @@ fn main() {
                     let path = entry.path();
                     let file_name = entry.file_name().to_string_lossy().to_lowercase();
                     if file_name.starts_with("lumiadam") || file_name.starts_with("io.github.yuxelmurat.lumiadam") {
+                        if contains_catalog(&path) {
+                            println!("  Preserving catalog data: {}", path.display());
+                            continue;
+                        }
                         let size = calculate_dir_size(&path);
                         print!("  Removing temp item: {} ... ", path.display());
                         io::stdout().flush().ok();
@@ -163,7 +170,7 @@ fn main() {
     println!("========================================================================");
     println!("Items Processed: {}", total_removed_items);
     println!("Disk Space Freed: {}", format_bytes(total_freed_bytes));
-    println!("[CONFIRMED] Library directories and database files (.opendam/library.sqlite)");
+    println!("[CONFIRMED] Library directories and catalog databases");
     println!("            were completely untouched and remain intact.");
     println!("========================================================================");
 
@@ -172,6 +179,19 @@ fn main() {
         let mut buf = String::new();
         io::stdin().read_line(&mut buf).ok();
     }
+}
+
+// Yerel kataloglar artık uygulama verisi içinde de bulunabilir. Okunamayan
+// veya bağlantı içeren klasörleri de silmeyerek bilinmeyen veriyi koru.
+fn contains_catalog(path: &Path) -> bool {
+    let Ok(metadata) = fs::symlink_metadata(path) else { return true; };
+    if metadata.file_type().is_symlink() { return true; }
+    if metadata.is_file() {
+        return path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("sqlite"))
+            || path.file_name().is_some_and(|name| name == ".lumiadam-catalog");
+    }
+    let Ok(entries) = fs::read_dir(path) else { return true; };
+    entries.into_iter().any(|entry| entry.map_or(true, |entry| contains_catalog(&entry.path())))
 }
 
 fn terminate_processes(is_dry_run: bool) {
@@ -295,5 +315,25 @@ fn format_bytes(bytes: u64) -> String {
         format!("{:.2} KB", bytes as f64 / KB as f64)
     } else {
         format!("{} B", bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn catalog_directories_are_preserved() {
+        let unique = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = env::temp_dir().join(format!("lumiadam-cleanup-test-{}", unique));
+        fs::create_dir_all(root.join("data")).unwrap();
+        assert!(!contains_catalog(&root));
+        fs::write(root.join("data/opendam.sqlite"), b"catalog").unwrap();
+        assert!(contains_catalog(&root));
+        fs::remove_file(root.join("data/opendam.sqlite")).unwrap();
+        fs::write(root.join("data/.lumiadam-catalog"), b"id").unwrap();
+        assert!(contains_catalog(&root));
+        assert!(contains_catalog(&root.join("unavailable")));
+        fs::remove_dir_all(root).unwrap();
     }
 }

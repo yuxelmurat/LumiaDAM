@@ -11,6 +11,52 @@ use crate::watcher;
 
 type Result<T> = std::result::Result<T, String>;
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageSettings {
+    active_path: String,
+    selected_path: String,
+    default_path: String,
+    restart_required: bool,
+    errors: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn get_storage_settings(state: State<'_, Arc<AppState>>) -> Result<StorageSettings> {
+    let selected: Option<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'storage_root'")
+        .fetch_optional(&state.db.master_pool).await.map_err(|e| e.to_string())?;
+    let default_path = state.db.default_storage_root.to_string_lossy().to_string();
+    let selected_path = selected.unwrap_or_else(|| default_path.clone());
+    let active_path = state.db.storage_root.to_string_lossy().to_string();
+    Ok(StorageSettings {
+        restart_required: selected_path != active_path,
+        active_path, selected_path, default_path, errors: state.db.storage_errors.clone(),
+    })
+}
+
+#[tauri::command]
+pub async fn set_storage_location(path: String, state: State<'_, Arc<AppState>>) -> Result<StorageSettings> {
+    let location = PathBuf::from(&path);
+    let rows: Vec<(String, Option<String>)> = sqlx::query_as("SELECT root_paths, catalog_path FROM libraries")
+        .fetch_all(&state.db.master_pool).await.map_err(|e| e.to_string())?;
+    let mut roots = Vec::new();
+    let mut catalogs = Vec::new();
+    for (paths, catalog) in rows {
+        let paths: Vec<PathBuf> = serde_json::from_str(&paths).map_err(|e| e.to_string())?;
+        roots.extend(paths);
+        if let Some(catalog) = catalog { catalogs.push(PathBuf::from(catalog)); }
+    }
+    // Sürücünün tamamı kaynak olsa da varsayılan yerel veri alanı kullanılabilir.
+    if location == state.db.default_storage_root {
+        std::fs::create_dir_all(&location).map_err(|e| e.to_string())?;
+        roots.clear();
+    }
+    crate::storage::validate_location(&location, &roots, &catalogs).map_err(|e| format!("{:#}", e))?;
+    sqlx::query("INSERT INTO settings(key, value) VALUES('storage_root', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .bind(path).execute(&state.db.master_pool).await.map_err(|e| e.to_string())?;
+    get_storage_settings(state).await
+}
+
 #[tauri::command]
 pub async fn add_library(
     payload: AddLibraryPayload,
@@ -23,19 +69,20 @@ pub async fn add_library(
     let first_path = payload.root_paths.first().ok_or("No root path provided")?;
     let root_path = PathBuf::from(first_path);
 
-    // Register library in memory & open its .opendam/library.sqlite with NAS pragmas
-    let _handle = state.db.register_library(&id, &payload.name, &root_path)
+    // Katalog arşivden ayrı depolanır; eski katalog varsa güvenli kopyası alınır.
+    let handle = state.db.register_library(&id, &payload.name, &root_path)
         .await
         .map_err(|e| e.to_string())?;
 
     // Record in master database
     sqlx::query(
-        "INSERT INTO libraries (id, name, root_paths, created_at, asset_count) VALUES (?, ?, ?, ?, 0)"
+        "INSERT INTO libraries (id, name, root_paths, created_at, asset_count, catalog_path) VALUES (?, ?, ?, ?, 0, ?)"
     )
     .bind(&id)
     .bind(&payload.name)
     .bind(&root_paths_json)
     .bind(now)
+    .bind(handle.catalog_dir.to_string_lossy().as_ref())
     .execute(&state.db.master_pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -129,7 +176,7 @@ pub async fn refresh_all_libraries(
 
     for (id, root_paths_json) in rows {
         let paths: Vec<String> = serde_json::from_str(&root_paths_json).unwrap_or_default();
-        let _ = watcher::index_paths(&state.db, &id, &paths).await;
+        watcher::index_paths(&state.db, &id, &paths).await.map_err(|e| e.to_string())?;
     }
 
     let _ = state.app_handle.emit("library:updated", ());
