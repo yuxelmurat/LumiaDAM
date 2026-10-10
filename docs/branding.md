@@ -14,13 +14,13 @@
 
 GitHub hesap adına dayanan identifier, sahipliği doğrulanmamış bir alan adı kullanmadan OpenDAM'in `com.opendam.desktop` kimliğinden ayrılır. Ürün adı, executable, kurulum kayıtları ve temizlik hedefleri de ayrılmıştır. Installer OpenDAM sürecini sonlandırmaz. Dağıtım başladıktan sonra identifier sabit tutulmalıdır.
 
-Bu değişiklik OpenDAM üzerine yerinde güncelleme değildir. İşletim sisteminin uygulama veri/ayar klasörü değişir; eski kütüphane listesi ve WebView ayarları otomatik kopyalanmaz. Kullanıcı mevcut kütüphane klasörlerini tekrar ekler. Kütüphane verileri ortak okunabildiği için aynı arşivde eşzamanlı yazma güvenliği sağlandığı iddia edilmez.
+Bu değişiklik OpenDAM üzerine yerinde güncelleme değildir. Eski OpenDAM kütüphane listesi ve WebView ayarları otomatik kopyalanmaz. Kullanıcı mevcut kütüphane klasörlerini tekrar ekler; eski katalog yerel alana kopyalanır. Güncel [depolama ve geçiş davranışı](storage.md) ayrı belgelenmiştir.
 
 ## Bilinçli olarak korunan adlar
 
 - `LICENSE` içindeki `OpenDAM Contributors` bildirimi ve upstream bağlantıları.
-- `.opendam/library.sqlite`, `.opendam/thumbs/`, kilit dosyaları ve SQL migration dosyaları: veri uyumluluğu ve migration checksum'ları.
-- Uygulama veri klasörü içindeki `opendam.sqlite` ve WebView içindeki `opendam-ui`: dış uygulama kimliği zaten ayrıdır; gereksiz veri geçişi eklenmemiştir.
+- `.opendam/library.sqlite` ve `.opendam/thumbs/`: eski katalog aktarımının kaynak biçimi; yeni kataloglar yerel/seçili depolamada tutulur. SQL migration dosyaları checksum uyumluluğu için korunur.
+- `opendam.sqlite` dosya adı ve WebView içindeki `opendam-ui`: dış uygulama kimliği ayrıdır. LumiaDAM ana veritabanı artık yerel `LumiaDAM/data` konumuna alınır.
 - `OPENDAM_PYTHON` / `OPENDAM_WORKER`: mevcut önizleme ortamları.
 - `application/opendam-asset-id`: sürükleme/bırakma üretici ve tüketicisinin ortak protokolü.
 - Blender dosya adı ve `opendam.*` / `OPENDAM_*` kimlikleri: kayıtlı kısayollar ve scriptler. Görünen eklenti adı LumiaDAM'dir; orijinal yazar bildirimi korunur.

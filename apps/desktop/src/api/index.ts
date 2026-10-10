@@ -11,7 +11,17 @@ import type {
 } from '../types';
 
 /** Thin wrapper around Tauri IPC commands */
+export interface StorageSettings {
+  activePath: string;
+  selectedPath: string;
+  defaultPath: string;
+  restartRequired: boolean;
+  errors: string[];
+}
+
 export const api = {
+  getStorageSettings: () => invoke<StorageSettings>('get_storage_settings'),
+  setStorageLocation: (path: string) => invoke<StorageSettings>('set_storage_location', { path }),
   // Libraries
   addLibrary: (payload: AddLibraryPayload) =>
     invoke<Library>('add_library', { payload }),

@@ -81,6 +81,9 @@ pub async fn search_assets(
     state: State<'_, Arc<AppState>>,
 ) -> Result<SearchResult> {
     let all_libs = state.db.get_all_libraries().await;
+    if !state.db.storage_errors.is_empty() {
+        return Err("Bazı kataloglar açılamadı. Depolama ayarlarındaki aktarım hatalarını kontrol edin.".into());
+    }
     let target_libs: Vec<(sqlx::Pool<sqlx::Sqlite>, Option<std::path::PathBuf>)> = {
         let mut list = Vec::new();
         if let Some(ref lids) = payload.query.library_ids {
@@ -637,7 +640,7 @@ pub async fn update_asset(
         }
         if let Some(ref thumbnail_path) = patch.thumbnail_path {
             let rel_thumb = match root {
-                Some(r) => make_relative_path(r, Path::new(thumbnail_path)),
+                Some(r) => resolve_path(r, thumbnail_path),
                 None => thumbnail_path.clone(),
             };
             let _ = sqlx::query("UPDATE assets SET thumbnail_path = ? WHERE id = ?")

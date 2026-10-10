@@ -8,6 +8,7 @@ import {
 } from '../Icons';
 import styles from './Toolbar.module.css';
 import clsx from 'clsx';
+import { StorageSettings } from '../StorageSettings';
 
 export function Toolbar() {
   const { viewMode, gridSize, sidebarOpen, detailPanelOpen,
@@ -15,6 +16,7 @@ export function Toolbar() {
   const { query, setQuery, search, loading } = useAssetStore();
   const { addLibrary } = useLibraryStore();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [storageOpen, setStorageOpen] = useState(false);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -53,6 +55,7 @@ export function Toolbar() {
   );
 
   return (
+    <>
     <header className={styles.toolbar} data-tauri-drag-region>
       {/* LumiaDAM amblemi ve adı */}
       <div className={styles.brand}>
@@ -111,6 +114,9 @@ export function Toolbar() {
 
       {/* Right controls */}
       <div className={styles.controls}>
+        <button type="button" className={styles.primaryBtn} onClick={() => setStorageOpen(true)}>
+          Depolama
+        </button>
         {/* Grid size */}
         {viewMode === 'grid' && (
           <div className={styles.buttonGroup}>
@@ -189,5 +195,7 @@ export function Toolbar() {
         </button>
       </div>
     </header>
+    {storageOpen && <StorageSettings onClose={() => setStorageOpen(false)} />}
+    </>
   );
 }

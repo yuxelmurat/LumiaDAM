@@ -4,7 +4,7 @@
 
 **3D, mimarlık ve tasarım arşivleri için yerel dijital varlık yöneticisi.**
 
-LumiaDAM, [LawLaw09/OpenDAM](https://github.com/LawLaw09/OpenDAM) projesinden türetilen, geliştirme aşamasındaki bir masaüstü uygulamasıdır. Bu ilk dönüşüm marka, uygulama kimliği ve depo belgelerini düzenler; yeni işlevlerin tamamlandığı anlamına gelmez.
+LumiaDAM, [LawLaw09/OpenDAM](https://github.com/LawLaw09/OpenDAM) projesinden türetilen, geliştirme aşamasındaki bir masaüstü uygulamasıdır.
 
 [Kaynak kod](https://github.com/yuxelmurat/LumiaDAM) · [Sürümler](https://github.com/yuxelmurat/LumiaDAM/releases) · [Geliştirme rehberi](CONTRIBUTING.md) · [MIT lisansı](LICENSE)
 
@@ -28,7 +28,8 @@ Bir uzantının indekslenmesi; tam geometri okuma, malzeme desteği veya DCC uyg
 
 - Bu dönüşüm hazırlanırken fork'ta yayımlanmış LumiaDAM sürümü yoktu. Hazır installer veya bağımsız portable paket vaat edilmiyor; güncel durum için [Sürümler](https://github.com/yuxelmurat/LumiaDAM/releases) sayfasına bakın.
 - Windows NSIS kurulum hedefi yapılandırılmıştır. Python işçisi ve bütün önizleme bağımlılıkları installer içine henüz paketlenmemiştir.
-- Kütüphanelerde `.opendam/library.sqlite` ve `.opendam/thumbs/` biçimi korunur. NAS üzerinde eşzamanlı yazma, kilitleme ve bağlantı kesilmesi ayrıca doğrulanmalıdır. Doğrulanmış performans ölçümü sunulmuyor.
+- Kataloglar ve küçük resimler varsayılan olarak Windows'ta `%LOCALAPPDATA%/LumiaDAM/libraries/<ad>--<kimlik>/` altında tutulur. Kaynak arşive yeni `.opendam` yazılmaz. Üst çubuktaki **Depolama** düğmesiyle başka konum seçilebilir; yerel SSD önerilir. [Depolama ve geçiş rehberi](docs/storage.md).
+- Mevcut yerel katalog açılışta tarama beklemeden kullanılır. Kaynak dosya değişikliklerini almak için **Yenile / F5** kullanın. Gerçek NAS üzerinde performans ölçümü henüz yapılmadı.
 - Mevcut dosya silme kodu, geri dönüşüm kutusu işlemi başarısız olursa kalıcı silmeye geçebilir. Güvenli silme düzeltmesi bu marka çalışmasının kapsamı dışındadır; değerlendirmeyi yedeklenmiş örnek arşivlerle yapın.
 - 3D görünümün ortam haritası gibi yardımcı kaynaklar dış ağdan yüklenebilir. Koşulsuz çevrimdışı çalışma iddiasında bulunulmuyor.
 
@@ -63,7 +64,7 @@ Tek EXE'nin bulunması Python önizlemelerini içeren bağımsız portable dağ�
 
 ## OpenDAM'den geçiş
 
-Kimlik `com.opendam.desktop` yerine `io.github.yuxelmurat.lumiadam` olarak ayrıldı. LumiaDAM ayrı kurulum ve uygulama ayarları kullanır; OpenDAM verileri otomatik taşınmaz. Mevcut kütüphane klasörlerini LumiaDAM'e yeniden ekleyebilirsiniz. Aynı kütüphaneyi iki uygulamada eşzamanlı düzenlemekten kaçının. [Kimlik ve uyumluluk notları](docs/branding.md).
+Kimlik `com.opendam.desktop` yerine `io.github.yuxelmurat.lumiadam` olarak ayrıldı. OpenDAM'in kütüphane listesi otomatik alınmaz; mevcut kütüphane klasörlerini LumiaDAM'e ekleyebilirsiniz. Eski `.opendam` katalogları ve küçük resimler ilk eklemede yerel alana kopyalanır; kaynak kopya korunur. İlk aktarım sırasında eski uygulamayı kapatın. Sonrasında iki uygulamanın katalog değişiklikleri birbirine senkronlanmaz. Önceki LumiaDAM sürümünün kayıtlı kütüphaneleri de ilk açılışta aktarılır. [Depolama ve geçiş rehberi](docs/storage.md).
 
 ## Sonraki geliştirmeler
 

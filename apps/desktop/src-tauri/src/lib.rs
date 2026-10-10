@@ -3,9 +3,10 @@ pub mod db;
 pub mod models;
 pub mod watcher;
 pub mod preview;
+pub mod storage;
 
 use std::sync::Arc;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 
@@ -32,21 +33,25 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
-            let app_data_dir = app
-                .path()
-                .app_data_dir()
-                .expect("Failed to get app data directory");
-
-            std::fs::create_dir_all(&app_data_dir)?;
-
-            let db_path = app_data_dir.join("opendam.sqlite");
-
-            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+            let legacy_master = app.path().app_data_dir()?.join("opendam.sqlite");
+            let local_dir = dirs::data_local_dir()
+                .ok_or("Yerel uygulama verisi klasörü bulunamadı")?.join("LumiaDAM");
+            let data_dir = local_dir.join("data");
+            std::fs::create_dir_all(&data_dir)?;
+            let db_path = data_dir.join("opendam.sqlite");
+            let rt = tokio::runtime::Runtime::new()?;
             let db = rt.block_on(async {
-                Database::new(db_path.to_str().unwrap())
-                    .await
-                    .expect("Failed to initialize database")
-            });
+                if !db_path.try_exists()? && legacy_master.try_exists()? {
+                    let temporary = data_dir.join(format!("migration-{}.sqlite", uuid::Uuid::new_v4()));
+                    let result = storage::snapshot(&legacy_master, &temporary).await;
+                    if let Err(error) = result {
+                        let _ = std::fs::remove_file(&temporary);
+                        return Err(error);
+                    }
+                    std::fs::rename(temporary, &db_path)?;
+                }
+                Database::new(db_path.to_str().ok_or_else(|| anyhow::anyhow!("Geçersiz veri yolu"))?, local_dir.join("libraries")).await
+            })?;
 
             let watcher = LibraryWatcher::new();
             let state = Arc::new(AppState {
@@ -60,68 +65,13 @@ pub fn run() {
             // Start the background preview worker queue
             crate::preview::start_preview_worker(state.clone());
 
-            // Re-index all existing libraries on startup in background
-            let startup_state = state.clone();
-            tauri::async_runtime::spawn(async move {
-                let rows = sqlx::query_as::<_, (String, String)>(
-                    "SELECT id, root_paths FROM libraries"
-                )
-                .fetch_all(&startup_state.db.master_pool)
-                .await;
-
-                if let Ok(libraries) = rows {
-                    for (id, root_paths_json) in libraries {
-                        let paths: Vec<String> = serde_json::from_str(&root_paths_json).unwrap_or_default();
-                        let _ = watcher::index_paths(&startup_state.db, &id, &paths).await;
-                    }
-                    let _ = startup_state.app_handle.emit("library:updated", ());
-                }
-            });
-
-            // ── Cross-machine NAS change detection ───────────────────────────────
-            // When another machine writes to the shared library.sqlite, its mtime
-            // changes on the NAS. We poll every 30s and emit library:updated when
-            // we detect a newer mtime, causing the frontend to re-query automatically.
-            let poll_state = state.clone();
-            tauri::async_runtime::spawn(async move {
-                use std::collections::HashMap;
-                use std::time::SystemTime;
-
-                // seed: record the initial mtime for each known library DB
-                let mut last_seen: HashMap<String, SystemTime> = HashMap::new();
-
-                loop {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
-
-                    let libs = poll_state.db.get_all_libraries().await;
-                    let mut changed = false;
-
-                    for lib in &libs {
-                        let db_path = lib.root_path.join(".opendam").join("library.sqlite");
-                        if let Ok(meta) = std::fs::metadata(&db_path) {
-                            if let Ok(mtime) = meta.modified() {
-                                let prev = last_seen.entry(lib.id.clone()).or_insert(mtime);
-                                if mtime > *prev {
-                                    *prev = mtime;
-                                    changed = true;
-                                    tracing::debug!(
-                                        "NAS poll: library '{}' DB updated by another machine",
-                                        lib.name
-                                    );
-                                }
-                            }
-                        }
-                    }
-
-                    if changed {
-                        let _ = poll_state.app_handle.emit("library:updated", ());
-                    }
-                }
-            });
+            // Açılışta NAS taraması yok: katalog hemen açılır, kaynak Yenile ile taranır.
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::library::get_storage_settings,
+            commands::library::set_storage_location,
             commands::library::add_library,
             commands::library::list_libraries,
             commands::library::remove_library,
