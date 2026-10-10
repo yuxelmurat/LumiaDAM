@@ -62,7 +62,9 @@
     "windows": {
       "nsis": {
         "template": "installer.nsi",
-        "startMenuFolder": "LumiaDAM"
+        "startMenuFolder": "LumiaDAM",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico"
       }
     },
     "publisher": "yuxelmurat",

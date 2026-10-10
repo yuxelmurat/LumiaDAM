@@ -82,7 +82,7 @@ pub async fn search_assets(
 ) -> Result<SearchResult> {
     let all_libs = state.db.get_all_libraries().await;
     if !state.db.storage_errors.is_empty() {
-        return Err("Bazı kataloglar açılamadı. Depolama ayarlarındaki aktarım hatalarını kontrol edin.".into());
+        return Err("Some catalogs could not be opened. Check the transfer errors in Storage settings.".into());
     }
     let target_libs: Vec<(sqlx::Pool<sqlx::Sqlite>, Option<std::path::PathBuf>)> = {
         let mut list = Vec::new();

@@ -68,9 +68,10 @@ pub async fn add_library(
 
     let first_path = payload.root_paths.first().ok_or("No root path provided")?;
     let root_path = PathBuf::from(first_path);
+    let name = crate::db::library_name(&payload.name, first_path);
 
     // Katalog arşivden ayrı depolanır; eski katalog varsa güvenli kopyası alınır.
-    let handle = state.db.register_library(&id, &payload.name, &root_path)
+    let handle = state.db.register_library(&id, &name, &root_path)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -79,7 +80,7 @@ pub async fn add_library(
         "INSERT INTO libraries (id, name, root_paths, created_at, asset_count, catalog_path) VALUES (?, ?, ?, ?, 0, ?)"
     )
     .bind(&id)
-    .bind(&payload.name)
+    .bind(&name)
     .bind(&root_paths_json)
     .bind(now)
     .bind(handle.catalog_dir.to_string_lossy().as_ref())
@@ -94,14 +95,14 @@ pub async fn add_library(
     tokio::spawn(async move {
         if let Err(e) = watcher::index_paths(&state_clone.db, &lib_id, &paths).await {
             tracing::error!("Failed to index library {}: {}", lib_id, e);
-        } else {
-            let _ = state_clone.app_handle.emit("library:updated", ());
         }
+        // Tarama yarıda kalsa da içe alınan katalog ve tamamlanan kayıtlar görünür olmalı.
+        let _ = state_clone.app_handle.emit("library:updated", ());
     });
 
     Ok(Library {
         id,
-        name: payload.name,
+        name,
         root_paths: payload.root_paths,
         created_at: now,
         asset_count: 0,

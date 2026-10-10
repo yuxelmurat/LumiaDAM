@@ -125,9 +125,7 @@ export function Sidebar() {
         title: 'Select Library Folder',
       });
       if (selectedPath && typeof selectedPath === 'string') {
-        const name = selectedPath.split(/[/\\]/).filter(Boolean).pop() || 'New Library';
-        await addLibrary(name, [selectedPath]);
-        search();
+        await addLibrary([selectedPath]);
       }
     } catch (err) {
       console.error('Failed to add library:', err);

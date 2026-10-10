@@ -121,7 +121,7 @@ interface LibraryStore {
   libraries: Library[];
   loading: boolean;
   fetchLibraries: () => Promise<void>;
-  addLibrary: (name: string, rootPaths: string[]) => Promise<void>;
+  addLibrary: (rootPaths: string[]) => Promise<void>;
   removeLibrary: (id: string) => Promise<void>;
 }
 
@@ -139,9 +139,16 @@ export const useLibraryStore = create<LibraryStore>()((set) => ({
     }
   },
 
-  addLibrary: async (name, rootPaths) => {
-    const lib = await api.addLibrary({ name, rootPaths });
-    set((s) => ({ libraries: [...s.libraries, lib] }));
+  addLibrary: async (rootPaths) => {
+    const lib = await api.addLibrary({ name: '', rootPaths });
+    set((s) => ({ libraries: [...s.libraries.filter((item) => item.id !== lib.id), lib] }));
+    // Üç ekleme noktası da tüm kütüphaneleri gösteren aynı akışı kullanır.
+    useUIStore.getState().setActiveLibrary(null);
+    useUIStore.getState().clearSelection();
+    useAssetStore.getState().setQuery({
+      text: '', filter: {}, libraryId: undefined, libraryIds: undefined, collectionId: undefined,
+    });
+    await useAssetStore.getState().search();
   },
 
   removeLibrary: async (id) => {
@@ -270,7 +277,7 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
       set({ assets: result.assets, total: result.total, assetMap });
     } catch (error) {
       if (isCurrent()) {
-        console.error('Varlık araması başarısız:', error);
+        console.error('Asset search failed:', error);
         set({ searchError: 'Unable to load assets. Please try again.' });
       }
     } finally {

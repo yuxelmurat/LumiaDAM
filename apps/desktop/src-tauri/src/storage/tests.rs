@@ -1,6 +1,38 @@
 use super::*;
 use crate::db::{connect_library_sqlite, Database};
 
+#[test]
+fn library_names_use_folder_or_drive_and_preserve_custom_names() {
+    use crate::db::library_name;
+    assert_eq!(library_name("", "A:\\"), "A:");
+    assert_eq!(library_name("New Library", "A:/"), "A:");
+    assert_eq!(library_name("", "D:\\Model Archive\\"), "Model Archive");
+    assert_eq!(library_name("", "\\\\nas\\Models\\"), "Models");
+    assert_eq!(library_name("", "/mnt/models/"), "models");
+    assert_eq!(library_name("", "/"), "/");
+    assert_eq!(library_name("My Library", "A:\\"), "My Library");
+}
+
+#[tokio::test]
+async fn opening_catalog_repairs_placeholder_name_without_rescanning() {
+    let fixture = Fixture::new();
+    let source = fixture.0.join("Models");
+    std::fs::create_dir(&source).unwrap();
+    let db = fixture.database().await;
+    let id = Uuid::new_v4().to_string();
+    register_row(&db, &id, &source).await;
+    db.register_library(&id, "New Library", &source).await.unwrap();
+    sqlx::query("UPDATE libraries SET name = 'New Library'").execute(&db.master_pool).await.unwrap();
+    close(db).await;
+    std::fs::remove_dir(&source).unwrap();
+    let db = fixture.database().await;
+    let name: String = sqlx::query_scalar("SELECT name FROM libraries WHERE id = ?")
+        .bind(&id).fetch_one(&db.master_pool).await.unwrap();
+    assert_eq!(name, "Models");
+    assert_eq!(db.get_library_handle(Some(&id)).await.unwrap().name, "Models");
+    close(db).await;
+}
+
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {

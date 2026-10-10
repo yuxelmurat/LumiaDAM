@@ -35,7 +35,7 @@ pub fn run() {
         .setup(|app| {
             let legacy_master = app.path().app_data_dir()?.join("opendam.sqlite");
             let local_dir = dirs::data_local_dir()
-                .ok_or("Yerel uygulama verisi klasörü bulunamadı")?.join("LumiaDAM");
+                .ok_or("Local application data folder was not found")?.join("LumiaDAM");
             let data_dir = local_dir.join("data");
             std::fs::create_dir_all(&data_dir)?;
             let db_path = data_dir.join("opendam.sqlite");
@@ -50,7 +50,7 @@ pub fn run() {
                     }
                     std::fs::rename(temporary, &db_path)?;
                 }
-                Database::new(db_path.to_str().ok_or_else(|| anyhow::anyhow!("Geçersiz veri yolu"))?, local_dir.join("libraries")).await
+                Database::new(db_path.to_str().ok_or_else(|| anyhow::anyhow!("Invalid data path"))?, local_dir.join("libraries")).await
             })?;
 
             let watcher = LibraryWatcher::new();

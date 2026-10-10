@@ -21,7 +21,7 @@ export function StorageSettings({ onClose }: { onClose: () => void }) {
 
   const browse = async () => {
     try {
-      const selected = await open({ directory: true, multiple: false, title: 'Katalog depolama klasörünü seçin' });
+      const selected = await open({ directory: true, multiple: false, title: 'Select Catalog Storage Folder' });
       if (typeof selected === 'string') setPath(selected);
     } catch (reason) { setError(String(reason)); }
   };
@@ -36,29 +36,29 @@ export function StorageSettings({ onClose }: { onClose: () => void }) {
 
   return (
     <dialog ref={dialog} className={styles.dialog} aria-labelledby="storage-title" onClose={onClose}>
-      <h2 id="storage-title">Katalog depolama</h2>
-      <p>Veritabanları ve küçük resimler bu konumda tutulur. Hızlı gezinme için yerel SSD önerilir.
-        NAS, harici disk veya yavaş bir sürücü seçmek arama ve önizleme hızını etkiler.</p>
+      <h2 id="storage-title">Catalog Storage</h2>
+      <p>Databases and thumbnails are stored here. A local SSD is recommended for fast browsing.
+        Choosing a NAS, external disk, or slower drive affects search and preview speed.</p>
       {settings && <>
-        <p>Şu an kullanılan konum: <span className={styles.path}>{settings.activePath}</span></p>
-        <label htmlFor="storage-path">Yeni konum</label>
+        <p>Current location: <span className={styles.path}>{settings.activePath}</span></p>
+        <label htmlFor="storage-path">New location</label>
         <input id="storage-path" value={path} readOnly className={styles.pathInput} />
         <div className={styles.actions}>
-          <button type="button" disabled={busy} onClick={browse}>Klasör seç</button>
-          <button type="button" disabled={busy} onClick={() => setPath(settings.defaultPath)}>Varsayılana dön</button>
+          <button type="button" disabled={busy} onClick={browse}>Choose Folder</button>
+          <button type="button" disabled={busy} onClick={() => setPath(settings.defaultPath)}>Use Default</button>
         </div>
-        <p>Her kütüphane için adı ve benzersiz kimliğiyle ayrı bir alt klasör oluşturulur.
-          Konum değişikliği uygulamayı kapatıp açınca uygulanır. Mevcut katalog ve önizlemeler kopyalanır;
-          eski kopya ve kaynak dosyalar korunur. Büyük kataloglarda ilk aktarım zaman alabilir.</p>
-        {settings.restartRequired && <p role="status">Yeni konum kaydedildi. Aktarım için LumiaDAM’i kapatıp yeniden açın.</p>}
+        <p>Each library has a separate subfolder with its name and unique ID.
+          Location changes take effect after restarting LumiaDAM. Existing catalogs and previews are copied;
+          the old copy and source files are preserved. Large catalogs may take time to transfer.</p>
+        {settings.restartRequired && <p role="status">New location saved. Restart LumiaDAM to transfer your catalogs.</p>}
         {settings.errors.map((message, index) => <p key={index} role="alert">{message}</p>)}
       </>}
       {error && <p role="alert">{error}</p>}
       <div className={styles.actions}>
         <button type="button" disabled={busy || !settings || path === settings.selectedPath} onClick={save}>
-          {busy ? 'Kaydediliyor…' : 'Kaydet'}
+          {busy ? 'Saving…' : 'Save'}
         </button>
-        <button type="button" onClick={() => dialog.current?.close()}>Kapat</button>
+        <button type="button" onClick={() => dialog.current?.close()}>Close</button>
       </div>
     </dialog>
   );
