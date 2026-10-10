@@ -15,7 +15,9 @@ Kaynak sürücü/klasör ile katalog depolaması ayrıdır. Aynı adlı kütüph
 
 ## Konumu değiştirme
 
-Üst çubuktaki **Depolama → Klasör seç → Kaydet** yolunu kullanın. Seçilen mevcut klasörün yazılabilir olması gerekir. **Varsayılana dön** yerel konumu seçer; ardından Kaydet'e basın. Hızlı arama ve önizleme için yerel SSD önerilir; NAS veya yavaş disk seçmek bu işlemleri yavaşlatabilir.
+Üst çubuktaki **Storage → Choose Folder → Save** yolunu kullanın. Seçilen mevcut klasörün yazılabilir olması gerekir. **Use Default** yerel konumu seçer; ardından **Save** düğmesine basın. Hızlı arama ve önizleme için yerel SSD önerilir; NAS veya yavaş disk seçmek bu işlemleri yavaşlatabilir.
+
+Kütüphane adı seçilen ana klasörden veya sürücü harfinden alınır (`A:\` → `A:`). Önceden “New Library” adıyla kaydedilmiş kütüphaneler açılışta kaynak yoluna göre adlandırılır. Kütüphane eklendiğinde filtreler temizlenir ve **All Libraries** görünümü açılır. İçeri alınan katalog hemen sorgulanır; yeni dosyaların ilk taraması bittiğinde görünüm otomatik yenilenir.
 
 Değişiklik uygulamayı kapatıp açınca uygulanır. Kayıtlı kataloglar ve önizlemeler yeni konuma kopyalanır. Ana kütüphane listesi/ayar veritabanı yerel `data` klasöründe kalır. Büyük katalogların ilk aktarımı açılışı uzatabilir. Eski konum otomatik silinmez; tekrar aynı hedefe dönülürse mevcut eski kopyanın üzerine yazılmaz, farklı son ekli klasör oluşturulur.
 

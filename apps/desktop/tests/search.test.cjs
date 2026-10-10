@@ -11,7 +11,7 @@ const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 
-function setup() {
+function setup(overrides = {}) {
   const requests = [];
   const timers = [];
   const errors = [];
@@ -20,6 +20,7 @@ function setup() {
     searchAssets: (payload) => new Promise((resolve, reject) => {
       requests.push({ payload, resolve, reject });
     }),
+    ...overrides,
   };
   runInNewContext(compiled, {
     exports,
@@ -31,8 +32,48 @@ function setup() {
   const finish = (index, id) => requests[index].resolve({
     assets: [{ id }], total: 1, page: 0, pageSize: 100,
   });
-  return { store, requests, timers, errors, finish };
+  return { store, libraries: exports.useLibraryStore, ui: exports.useUIStore, requests, timers, errors, finish };
 }
+
+test('Kütüphane eklemek eski kapsamı temizler ve tıklama gerektirmeden tüm katalogları sorgular', async () => {
+  const { store, libraries, ui, requests, finish } = setup({
+    addLibrary: async (payload) => ({ id: 'new', name: 'A:', rootPaths: payload.rootPaths }),
+  });
+  ui.getState().setActiveLibrary('old');
+  ui.getState().selectAsset('old-asset');
+  store.getState().setQuery({ text: 'wood', libraryId: 'old', libraryIds: ['old'], collectionId: 'collection', filter: { kinds: ['texture'] } });
+  store.getState().setPage(3);
+  const adding = libraries.getState().addLibrary(['A:\\']);
+  await new Promise(setImmediate);
+  assert.equal(requests.length, 1);
+  const { query, page } = requests[0].payload;
+  assert.equal(query.libraryId, undefined);
+  assert.equal(query.libraryIds, undefined);
+  assert.equal(query.collectionId, undefined);
+  assert.equal(query.text, '');
+  assert.equal(Object.keys(query.filter).length, 0);
+  assert.equal(page, 0);
+  assert.equal(ui.getState().activeLibraryId, null);
+  assert.equal(ui.getState().selectedLibraryIds.length, 0);
+  assert.equal(ui.getState().selectedAssetIds.size, 0);
+  finish(0, 'imported-asset');
+  await adding;
+  assert.equal(libraries.getState().libraries[0].name, 'A:');
+  assert.equal(store.getState().assets[0].id, 'imported-asset');
+});
+
+test('Kütüphane eklenemezse mevcut görünüm korunur', async () => {
+  const { store, libraries, ui, requests } = setup({
+    addLibrary: async () => { throw new Error('Cannot open catalog'); },
+  });
+  ui.getState().setActiveLibrary('old');
+  store.getState().setQuery({ libraryId: 'old' });
+  await assert.rejects(libraries.getState().addLibrary(['A:\\']));
+  assert.equal(ui.getState().activeLibraryId, 'old');
+  assert.equal(store.getState().query.libraryId, 'old');
+  assert.equal(libraries.getState().libraries.length, 0);
+  assert.equal(requests.length, 0);
+});
 
 test('Geç gelen eski filtre cevabı son seçilen filtrenin sonucunu ezmez', async () => {
   const { store, finish } = setup();

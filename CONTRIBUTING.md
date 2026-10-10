@@ -61,6 +61,9 @@ Mevcut başlangıç kodunda iki ek kontrol sorunu vardır: kök `pnpm typecheck`
 
 ## Veri ve marka uyumluluğu
 
+- Uygulama arayüzündeki metinleri ve uygulamanın ürettiği hata mesajlarını İngilizce yazın. Kod açıklamaları ve geliştirme notları Türkçe olabilir.
+- Simge veya arayüz değişikliklerinde `build.rs` dosyasındaki `icons` ve `../dist` bağımlılıklarını koruyun; aksi halde eski kaynaklar EXE içinde kalabilir. Windows simgesini yalnız PNG dosyasında değil, derlenmiş EXE'den çıkararak da kontrol edin.
+
 - Eski `.opendam` kataloglarının aktarım uyumluluğunu koruyun. Yeni katalogları kaynak arşive yazmayın; kaynak yollarını ve yerel önizleme yollarını ayırın. [Depolama düzeni](docs/storage.md).
 - Kütüphane SQLite bağlantılarındaki rollback journal yaklaşımını marka dönüşümünde değiştirmeyin.
 - `OPENDAM_PYTHON`, `OPENDAM_WORKER`, `application/opendam-asset-id` ve Blender operator kimlikleri geriye uyumluluk yüzeyleridir.

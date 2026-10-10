@@ -16,11 +16,11 @@ pub fn path_is_within(path: &Path, parent: &Path) -> bool {
 
 pub fn validate_location(path: &Path, sources: &[PathBuf], catalogs: &[PathBuf]) -> Result<()> {
     use std::io::Write;
-    anyhow::ensure!(path.is_absolute() && path.is_dir(), "Var olan, tam yollu bir klasör seçin");
+    anyhow::ensure!(path.is_absolute() && path.is_dir(), "Select an existing folder using an absolute path");
     let resolved = std::fs::canonicalize(path)?;
     for root in sources.iter().chain(catalogs) {
         let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.clone());
-        anyhow::ensure!(!path_is_within(&resolved, &root), "Depolama klasörü kaynak arşivin veya mevcut katalog alt klasörünün içinde olamaz");
+        anyhow::ensure!(!path_is_within(&resolved, &root), "Storage cannot be inside a source library or an existing catalog folder");
     }
     let probe = path.join(format!(".lumiadam-write-test-{}", Uuid::new_v4()));
     let result = (|| -> Result<()> {
@@ -30,7 +30,7 @@ pub fn validate_location(path: &Path, sources: &[PathBuf], catalogs: &[PathBuf])
         Ok(())
     })();
     let _ = std::fs::remove_file(probe);
-    result.context("Seçilen klasöre yazılamıyor")
+    result.context("Cannot write to the selected folder")
 }
 
 /// Açık veritabanını dosya kopyasıyla değil, tutarlı bir SQLite anlık görüntüsüyle aktarır.
@@ -79,12 +79,12 @@ pub async fn prepare_catalog(storage_root: &Path, name: &str, id: &str, source: 
         std::fs::write(staging.join(".lumiadam-catalog"), id)?;
         if let Some(source) = source {
             snapshot(&source.join("library.sqlite"), &staging.join("library.sqlite")).await
-                .context("Eski katalog okunamadı; kaynak korunuyor")?;
+                .context("Cannot read the old catalog; the source is preserved")?;
             let source_thumbs = source.join("thumbs");
             if source_thumbs.try_exists()? {
                 for entry in walkdir::WalkDir::new(&source_thumbs).follow_links(false) {
                     let entry = entry?;
-                    if entry.path_is_symlink() { bail!("Önizleme klasöründe sembolik bağlantı var; taşıma durduruldu"); }
+                    if entry.path_is_symlink() { bail!("Transfer stopped: the preview folder contains a symbolic link"); }
                     let target = staging.join("thumbs").join(entry.path().strip_prefix(&source_thumbs)?);
                     if entry.file_type().is_dir() {
                         std::fs::create_dir_all(target)?;
@@ -116,7 +116,7 @@ pub async fn prepare_catalog(storage_root: &Path, name: &str, id: &str, source: 
                 }
                 transaction.commit().await?;
                 let check: String = sqlx::query_scalar("PRAGMA quick_check").fetch_one(&mut connection).await?;
-                if check != "ok" { bail!("Katalog doğrulanamadı: {}", check); }
+                if check != "ok" { bail!("Catalog validation failed: {}", check); }
                 Ok(())
             }.await;
             connection.close().await?;

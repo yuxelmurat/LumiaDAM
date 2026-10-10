@@ -38,8 +38,7 @@ export function Toolbar() {
         title: 'Select Library Folder'
       });
       if (selectedPath && typeof selectedPath === 'string') {
-        const name = selectedPath.split(/[/\\]/).pop() || 'New Library';
-        await addLibrary(name, [selectedPath]);
+        await addLibrary([selectedPath]);
       }
     } catch (err) {
       console.error('Failed to add library:', err);
@@ -115,7 +114,7 @@ export function Toolbar() {
       {/* Right controls */}
       <div className={styles.controls}>
         <button type="button" className={styles.primaryBtn} onClick={() => setStorageOpen(true)}>
-          Depolama
+          Storage
         </button>
         {/* Grid size */}
         {viewMode === 'grid' && (

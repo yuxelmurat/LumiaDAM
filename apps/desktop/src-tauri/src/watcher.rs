@@ -66,14 +66,14 @@ struct PendingAsset {
 /// Kaynak dosyaları okuyup yerel kataloğu günceller; kaynakta veri veya kilit oluşturmaz.
 pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> Result<()> {
     let handle = db.get_library_handle(Some(library_id)).await
-        .ok_or_else(|| anyhow::anyhow!("Kütüphane kataloğu açık değil"))?;
+        .ok_or_else(|| anyhow::anyhow!("Library catalog is not open"))?;
     let _scan = handle.scan_lock.lock().await;
     let pool = handle.pool;
     let root_path = handle.root_path;
     let thumbs_dir = handle.catalog_dir.join("thumbs");
-    anyhow::ensure!(!paths.is_empty(), "Taranacak kaynak yok");
+    anyhow::ensure!(!paths.is_empty(), "No source folders to scan");
     for root in paths {
-        anyhow::ensure!(Path::new(root).is_dir(), "Kaynağa ulaşılamıyor; katalog korundu: {}", root);
+        anyhow::ensure!(Path::new(root).is_dir(), "Source is unavailable; the catalog is preserved: {}", root);
     }
     let now = Utc::now().timestamp_millis();
 

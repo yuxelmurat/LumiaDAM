@@ -6,6 +6,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+/// Sondaki ayırıcıları yok sayar; sürücü kökünde harfi, ağ paylaşımında paylaşım adını kullanır.
+pub fn library_name(name: &str, root: &str) -> String {
+    if !name.trim().is_empty() && !name.eq_ignore_ascii_case("New Library") {
+        return name.to_string();
+    }
+    root.trim_end_matches(['/', '\\']).rsplit(['/', '\\']).next()
+        .filter(|part| !part.is_empty()).unwrap_or(root).to_string()
+}
+
 #[derive(Clone)]
 pub struct LibraryHandle {
     pub id: String,
@@ -179,9 +188,15 @@ impl Database {
         for (id, name, paths) in rows {
             let paths: Vec<String> = serde_json::from_str(&paths)?;
             if let Some(root) = paths.first() {
+                let derived_name = library_name(&name, root);
+                if derived_name != name {
+                    sqlx::query("UPDATE libraries SET name = ? WHERE id = ?")
+                        .bind(&derived_name).bind(&id).execute(&db.master_pool).await?;
+                }
+                let name = derived_name;
                 if let Err(error) = db.register_library(&id, &name, Path::new(root)).await {
                     let message = format!("{}: {:#}", name, error);
-                    tracing::error!("Katalog açılamadı: {}", message);
+                    tracing::error!("Cannot open catalog: {}", message);
                     db.storage_errors.push(message);
                 }
             }
@@ -242,7 +257,7 @@ impl Database {
         ).bind(id).fetch_optional(&self.master_pool).await?.flatten();
         let catalog_dir = if let Some(previous) = previous {
             let previous = PathBuf::from(previous);
-            anyhow::ensure!(previous.join("library.sqlite").try_exists()?, "Kayıtlı katalog bulunamadı; boş katalog oluşturulmadı");
+            anyhow::ensure!(previous.join("library.sqlite").try_exists()?, "Saved catalog was not found; no empty catalog was created");
             if previous.parent() == Some(self.storage_root.as_path()) {
                 previous
             } else {
@@ -250,7 +265,7 @@ impl Database {
             }
         } else {
             // İlk aktarım için kaynak erişilebilir olmalı; sonraki açılışlar NAS'a bağlı değildir.
-            anyhow::ensure!(root_path.is_dir(), "Kaynak klasöre ulaşılamıyor; ilk aktarım için bağlayın");
+            anyhow::ensure!(root_path.is_dir(), "Source folder is unavailable; connect it for the first transfer");
             let legacy = root_path.join(".opendam");
             let source = if legacy.join("library.sqlite").try_exists()? { Some(legacy.as_path()) } else { None };
             crate::storage::prepare_catalog(&self.storage_root, name, id, source).await?
