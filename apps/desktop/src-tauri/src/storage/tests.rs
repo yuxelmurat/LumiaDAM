@@ -163,3 +163,22 @@ fn same_names_are_distinct_and_unsafe_storage_paths_are_rejected() {
     assert!(validate_location(&fixture.0, &[], &[]).is_ok());
     assert_eq!(std::fs::read_dir(&fixture.0).unwrap().count(), 1);
 }
+
+#[tokio::test]
+async fn catalogs_inside_a_source_drive_are_not_indexed_as_assets() {
+    let fixture = Fixture::new();
+    std::fs::write(fixture.0.join("source.jpg"), b"source").unwrap();
+    let db = fixture.database().await;
+    let id = Uuid::new_v4().to_string();
+    register_row(&db, &id, &fixture.0).await;
+    let handle = db.register_library(&id, "Sürücü", &fixture.0).await.unwrap();
+    std::fs::write(handle.catalog_dir.join("thumbs/cached.jpg"), b"preview").unwrap();
+    let old_storage = fixture.0.join("old-storage");
+    std::fs::create_dir(&old_storage).unwrap();
+    std::fs::write(old_storage.join(".lumiadam-catalog"), b"old catalog").unwrap();
+    std::fs::write(old_storage.join("cached.jpg"), b"preview").unwrap();
+    crate::watcher::index_paths(&db, &id, &[fixture.0.to_string_lossy().into_owned()]).await.unwrap();
+    let names: Vec<String> = sqlx::query_scalar("SELECT file_name FROM assets").fetch_all(&handle.pool).await.unwrap();
+    assert_eq!(names, vec!["source.jpg"]);
+    close(db).await;
+}

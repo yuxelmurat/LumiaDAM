@@ -640,7 +640,7 @@ pub async fn update_asset(
         }
         if let Some(ref thumbnail_path) = patch.thumbnail_path {
             let rel_thumb = match root {
-                Some(r) => make_relative_path(r, Path::new(thumbnail_path)),
+                Some(r) => resolve_path(r, thumbnail_path),
                 None => thumbnail_path.clone(),
             };
             let _ = sqlx::query("UPDATE assets SET thumbnail_path = ? WHERE id = ?")

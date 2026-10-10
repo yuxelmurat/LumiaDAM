@@ -7,7 +7,7 @@ use tokio::io::{AsyncWriteExt, AsyncBufReadExt, BufReader};
 use serde_json::json;
 use tauri::Emitter;
 use crate::AppState;
-use crate::db::{make_relative_path, resolve_path};
+use crate::db::resolve_path;
 
 pub const THUMB_SIZE: u32 = 512;
 
@@ -368,17 +368,15 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                             .await;
 
                         let thumb_to_save_abs = result_thumb.clone().or_else(|| result_model.clone());
-                        let rel_thumb = thumb_to_save_abs.as_ref().map(|abs| {
-                            make_relative_path(root_path, Path::new(abs))
-                        });
+                        // Kaynak tüm sürücü olsa da önizleme yolu kaynak köküne göre kısaltılmaz.
+                        let rel_thumb = thumb_to_save_abs;
 
                         if let Some(ref model_path) = result_model {
-                            let rel_model = make_relative_path(root_path, Path::new(model_path));
                             let _ = sqlx::query(
                                 "UPDATE assets SET preview_status = 'done', thumbnail_path = ?, metadata = json_set(coalesce(nullif(metadata, ''), '{}'), '$.preview_model', ?) WHERE id = ?"
                             )
                             .bind(&rel_thumb)
-                            .bind(&rel_model)
+                            .bind(model_path)
                             .bind(&asset_id)
                             .execute(pool)
                             .await;
