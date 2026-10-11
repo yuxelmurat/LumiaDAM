@@ -4,6 +4,7 @@ use sqlx::{Pool, Sqlite};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use tokio::sync::RwLock;
 
 /// Sondaki ayırıcıları yok sayar; sürücü kökünde harfi, ağ paylaşımında paylaşım adını kullanır.
@@ -22,6 +23,7 @@ pub struct LibraryHandle {
     pub root_path: PathBuf,
     pub catalog_dir: PathBuf,
     pub scan_lock: Arc<tokio::sync::Mutex<()>>,
+    pub scan_processed: Arc<AtomicU64>,
     pub pool: Pool<Sqlite>,
 }
 
@@ -95,30 +97,10 @@ pub async fn connect_library_sqlite(db_path: &Path) -> Result<Pool<Sqlite>> {
     .execute(&pool)
     .await;
 
-    // Purge any existing Revit backup files from database
-    if let Ok(assets) = sqlx::query_as::<_, (String, String)>(
-        "SELECT id, file_name FROM assets WHERE extension IN ('rfa', 'rvt')"
-    )
-    .fetch_all(&pool)
-    .await
-    {
-        let mut purged = false;
-        for (id, name) in assets {
-            if crate::watcher::is_revit_backup(&name) {
-                let _ = sqlx::query("DELETE FROM assets WHERE id = ?")
-                    .bind(&id)
-                    .execute(&pool)
-                    .await;
-                purged = true;
-            }
-        }
-        if purged {
-            let _ = sqlx::query("UPDATE libraries SET asset_count = (SELECT COUNT(*) FROM assets)")
-                .execute(&pool)
-                .await;
-        }
-    }
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_assets_path_nocase ON assets(file_path COLLATE NOCASE)")
+        .execute(&pool).await?;
 
+    crate::folders::initialize(&pool).await?;
     Ok(pool)
 }
 
@@ -284,6 +266,7 @@ impl Database {
             root_path: root_path.to_path_buf(),
             catalog_dir,
             scan_lock: Arc::new(tokio::sync::Mutex::new(())),
+            scan_processed: Arc::new(AtomicU64::new(0)),
             pool: lib_pool,
         };
 
@@ -337,6 +320,13 @@ pub fn resolve_path(root: &Path, rel_or_abs: &str) -> String {
     } else {
         root.join(p).to_string_lossy().to_string()
     }
+}
+
+/// Eski ortak önbellekte aynı adlı dosyalar tek `thumbs/ad_thumb.jpg` yolunu paylaşır.
+pub fn is_legacy_thumbnail(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    normalized.rsplit_once('/')
+        .and_then(|(parent, _)| parent.rsplit('/').next()) == Some("thumbs")
 }
 
 /// Helper to convert an absolute path to a portable relative path for storage

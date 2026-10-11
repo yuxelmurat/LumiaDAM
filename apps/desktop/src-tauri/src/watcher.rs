@@ -2,51 +2,12 @@ use anyhow::Result;
 use chrono::Utc;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::atomic::Ordering;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::db::{make_relative_path, Database};
+use crate::db::{make_relative_path, is_legacy_thumbnail, Database};
 use crate::models::AssetKind;
-
-// Supported extensions
-const SUPPORTED_EXTENSIONS: &[&str] = &[
-    // 3D & CAD
-    "fbx", "obj", "3ds", "dae", "gltf", "glb", "skp", "blend",
-    "c4d", "3dm", "rfa", "rvt", "dwg", "dxf", "stl", "usd", "usdz", "max",
-    "abc", "ply", "x3d", "wrl",
-    // Materials
-    "mat", "vrmat", "sbsar", "sbs", "mdl",
-    // Textures
-    "jpg", "jpeg", "png", "tga", "tif", "tiff", "bmp", "dds",
-    "ktx", "ktx2", "webp", "avif",
-    // HDRI/HDR
-    "hdr", "exr", "hdri",
-    // IES
-    "ies", "ldt",
-    // Video
-    "mp4", "mov", "avi", "mkv", "webm", "m4v",
-    // Image layered
-    "psd", "psb", "ai", "svg", "gif",
-    // Docs
-    "pdf", "txt", "md",
-];
-
-pub fn is_supported(ext: &str) -> bool {
-    SUPPORTED_EXTENSIONS.contains(&ext.to_lowercase().as_str())
-}
-
-/// Check whether a file is an Autodesk Revit backup file (e.g. `filename.0001.rfa` or `filename.0002.rvt`).
-pub fn is_revit_backup(file_name: &str) -> bool {
-    let lower = file_name.to_lowercase();
-    if lower.ends_with(".rfa") || lower.ends_with(".rvt") {
-        if let Some((stem, _ext)) = lower.rsplit_once('.') {
-            if let Some((_base, suffix)) = stem.rsplit_once('.') {
-                return (3..=5).contains(&suffix.len()) && suffix.chars().all(|c| c.is_ascii_digit());
-            }
-        }
-    }
-    false
-}
 
 struct PendingAsset {
     id: String,
@@ -68,6 +29,10 @@ pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> R
     let handle = db.get_library_handle(Some(library_id)).await
         .ok_or_else(|| anyhow::anyhow!("Library catalog is not open"))?;
     let _scan = handle.scan_lock.lock().await;
+    handle.scan_processed.store(0, Ordering::Relaxed);
+    sqlx::query("DELETE FROM settings WHERE key = ?")
+        .bind(format!("scan_error:{library_id}"))
+        .execute(&db.master_pool).await?;
     let pool = handle.pool;
     let root_path = handle.root_path;
     let thumbs_dir = handle.catalog_dir.join("thumbs");
@@ -92,7 +57,12 @@ pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> R
     }
 
     let mut seen_paths: HashSet<String> = HashSet::with_capacity(existing_map.len() + 100);
+    let mut seen_folders = HashSet::new();
     let mut pending_batch: Vec<PendingAsset> = Vec::with_capacity(200);
+    // Tüm dosya türleri görünür; uygulamanın kendi ana veritabanı yine kaynak sayılmaz.
+    let master_path = db.master_pool.connect_options().get_filename().to_string_lossy().into_owned();
+    let internal_files: Vec<_> = ["", "-journal", "-wal", "-shm"].iter()
+        .map(|suffix| std::path::PathBuf::from(format!("{master_path}{suffix}"))).collect();
 
     // ── 2. Walk directory tree ──────────────────────────────────────────
     for root in paths {
@@ -101,14 +71,15 @@ pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> R
             .follow_links(true)
             .into_iter()
             .filter_entry(|e| {
-                // Skip hidden folders and .opendam internal folder
+                // Yalnız uygulamanın katalog klasörlerini tarama dışında tut.
                 if crate::storage::path_is_within(e.path(), &db.storage_root)
+                    || internal_files.iter().any(|path| crate::storage::path_is_within(e.path(), path))
                     || crate::storage::path_is_within(e.path(), &db.default_storage_root)
                     || (e.file_type().is_dir() && e.path().join(".lumiadam-catalog").exists()) {
                     return false;
                 }
                 let file_name = e.file_name().to_string_lossy();
-                if e.file_type().is_dir() && file_name.starts_with('.') {
+                if e.file_type().is_dir() && file_name == ".opendam" {
                     return false;
                 }
                 true
@@ -117,7 +88,11 @@ pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> R
         for entry in walker {
             // Eksik/başarısız tarama silme aşamasına ulaşmamalı.
             let entry = entry?;
+            if entry.file_type().is_dir() {
+                seen_folders.insert(make_relative_path(&root_path, entry.path()));
+            }
             if !entry.file_type().is_file() { continue; }
+            handle.scan_processed.fetch_add(1, Ordering::Relaxed);
             let path = entry.path();
             let ext = path
                 .extension()
@@ -125,20 +100,11 @@ pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> R
                 .unwrap_or("")
                 .to_lowercase();
 
-            if !is_supported(&ext) {
-                continue;
-            }
-
             let file_name = path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("")
                 .to_string();
-
-            // Skip Revit backup files (e.g. name.0001.rfa, name.0002.rvt)
-            if is_revit_backup(&file_name) {
-                continue;
-            }
 
             let rel_path = make_relative_path(&root_path, path);
             seen_paths.insert(rel_path.clone());
@@ -162,43 +128,45 @@ pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> R
             let kind = AssetKind::from_extension(&ext);
             let kind_str = kind.as_str();
 
-            // Yerel önizleme klasörünü kullan.
-            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or(&file_name);
-            let thumb_png = thumbs_dir.join(format!("{}_thumb.png", stem));
-            let thumb_jpg = thumbs_dir.join(format!("{}_thumb.jpg", stem));
-
-            let mut preview_status = "none";
-            let mut thumbnail_path = None;
-            let mut needs_job = false;
-
-            if thumb_png.exists() {
-                preview_status = "done";
-                thumbnail_path = Some(thumb_png.to_string_lossy().to_string());
-            } else if thumb_jpg.exists() {
-                preview_status = "done";
-                thumbnail_path = Some(thumb_jpg.to_string_lossy().to_string());
-            } else {
-                let needs_preview = matches!(
-                    ext.as_str(),
-                    "max" | "fbx" | "obj" | "gltf" | "glb" | "dae" | "stl" | "3ds" | "skp" | "rfa" | "rvt" | "dwg" | "3dm" | "vrmat" | "psd" | "psb" | "ai" | "exr" | "hdr"
-                    | "jpg" | "jpeg" | "png" | "tif" | "tiff" | "tga" | "bmp" | "webp"
-                );
-                if needs_preview {
-                    preview_status = "pending";
-                    needs_job = true;
-                }
-            }
-
-            let (id, is_update) = if let Some((existing_id, _, _, existing_thumb)) = existing_map.get(&rel_path) {
-                if thumbnail_path.is_none() && existing_thumb.is_some() {
-                    thumbnail_path = existing_thumb.clone();
-                    preview_status = "done";
-                    needs_job = false;
-                }
+            let (id, is_update) = if let Some((existing_id, _, _, _)) = existing_map.get(&rel_path) {
                 (existing_id.clone(), true)
             } else {
                 (Uuid::new_v4().to_string(), false)
             };
+
+            // Aynı adlı dosyaların önizlemeleri ayrı klasörlerde tutulur.
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or(&file_name);
+            let asset_thumbs_dir = thumbs_dir.join(&id);
+            let thumb_png = asset_thumbs_dir.join(format!("{}_thumb.png", stem));
+            let thumb_jpg = asset_thumbs_dir.join(format!("{}_thumb.jpg", stem));
+
+            let mut preview_status = "none";
+            let mut thumbnail_path = None;
+            let mut needs_job = false;
+            let needs_preview = matches!(
+                ext.as_str(),
+                "max" | "fbx" | "obj" | "gltf" | "glb" | "dae" | "stl" | "3ds" | "skp" | "rfa" | "rvt" | "dwg" | "3dm" | "vrmat" | "psd" | "psb" | "ai" | "exr" | "hdr"
+                | "jpg" | "jpeg" | "png" | "tif" | "tiff" | "tga" | "bmp" | "webp"
+            );
+
+            if needs_preview && thumb_png.exists() {
+                preview_status = "done";
+                thumbnail_path = Some(thumb_png.to_string_lossy().to_string());
+            } else if needs_preview && thumb_jpg.exists() {
+                preview_status = "done";
+                thumbnail_path = Some(thumb_jpg.to_string_lossy().to_string());
+            } else if needs_preview {
+                preview_status = "pending";
+                needs_job = true;
+            }
+
+            if let Some((_, _, _, existing_thumb)) = existing_map.get(&rel_path) {
+                if thumbnail_path.is_none() && existing_thumb.as_ref().is_some_and(|path| !is_legacy_thumbnail(path)) {
+                    thumbnail_path = existing_thumb.clone();
+                    preview_status = "done";
+                    needs_job = false;
+                }
+            }
 
             pending_batch.push(PendingAsset {
                 id,
@@ -228,6 +196,8 @@ pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> R
         commit_asset_batch(&pool, &pending_batch).await?;
         pending_batch.clear();
     }
+
+    crate::folders::replace(&pool, &seen_folders).await?;
 
     // ── 3. Detect and remove deleted files in batch ───────────────────────
     let to_delete: Vec<String> = existing_map
@@ -263,6 +233,12 @@ pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> R
         .bind(library_id)
         .execute(&db.master_pool)
         .await;
+
+    sqlx::query("INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .bind(format!("last_scan:{library_id}"))
+        .bind(Utc::now().timestamp_millis().to_string())
+        .execute(&db.master_pool)
+        .await?;
 
     tracing::info!("NAS-efficient indexing complete for library {}: {} total assets", library_id, total_count);
     Ok(())

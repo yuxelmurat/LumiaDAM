@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type {
   Asset,
+  FolderResult,
   Library,
   Collection,
   Tag,
@@ -36,6 +37,7 @@ interface UIState {
   toggleSelectedLibrary: (id: string, multi?: boolean) => void;
   clearLibrarySelection: () => void;
   setActiveLibrary: (id: string | null) => void;
+  setFolderLibrary: (id: string) => void;
   setActiveCollection: (id: string | null) => void;
 }
 
@@ -101,6 +103,7 @@ export const useUIStore = create<UIState>()(
 
       setActiveLibrary: (id) =>
         set({ activeLibraryId: id, selectedLibraryIds: id ? [id] : [], activeCollectionId: null }),
+      setFolderLibrary: (id) => set({ activeLibraryId: id, selectedLibraryIds: [id] }),
       setActiveCollection: (id) =>
         set({ activeCollectionId: id, activeLibraryId: null, selectedLibraryIds: [] }),
     }),
@@ -159,6 +162,11 @@ export const useLibraryStore = create<LibraryStore>()((set) => ({
 
 // ── Asset / Search Store ──────────────────────────────────────────────────
 interface AssetStore {
+  folders: FolderResult[];
+  folderTotal: number;
+  folderHistory: SearchQuery[];
+  openFolder: (folder: FolderResult) => Promise<void>;
+  backFromFolder: () => Promise<void>;
   assets: Asset[];
   total: number;
   page: number;
@@ -198,6 +206,27 @@ let displayedPage = 0;
 let displayedPageSize = 100;
 
 export const useAssetStore = create<AssetStore>()((set, get) => ({
+  folders: [],
+  folderTotal: 0,
+  folderHistory: [],
+  openFolder: async (folder) => {
+    const { query, folderHistory } = get();
+    set({ folderHistory: [...folderHistory, query], page: 0, query: {
+      ...query, text: '', folderPage: 0, libraryIds: undefined, libraryId: folder.libraryId, folderPath: folder.path,
+    } });
+    useUIStore.getState().setFolderLibrary(folder.libraryId);
+    useUIStore.getState().clearSelection();
+    await get().search();
+  },
+  backFromFolder: async () => {
+    const history = get().folderHistory;
+    const query = history.at(-1) ?? defaultQuery;
+    set({ query, page: 0, folderHistory: history.slice(0, -1) });
+    useUIStore.getState().setSelectedLibraryIds(query.libraryIds ?? (query.libraryId ? [query.libraryId] : []));
+    if (query.collectionId) useUIStore.getState().setActiveCollection(query.collectionId);
+    useUIStore.getState().clearSelection();
+    await get().search();
+  },
   assets: [],
   total: 0,
   page: 0,
@@ -207,23 +236,27 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
   query: defaultQuery,
   assetMap: new Map(),
 
-  setQuery: (q) => set((s) => ({ query: { ...s.query, ...q }, page: 0 })),
+  setQuery: (q) => set((s) => {
+    const scopeChanged = 'libraryId' in q || 'libraryIds' in q || 'collectionId' in q;
+    return { query: { ...s.query, folderPage: 0, ...(scopeChanged ? { folderPath: undefined } : {}), ...q },
+      page: 0, ...(scopeChanged ? { folderHistory: [] } : {}) };
+  }),
 
   setFilter: (f) =>
     set((s) => ({
-      query: { ...s.query, filter: { ...s.query.filter, ...f } },
+      query: { ...s.query, folderPage: 0, filter: { ...s.query.filter, ...f } },
       page: 0,
     })),
 
   replaceFilter: (f, collectionId) =>
     set((s) => ({
-      query: { ...s.query, collectionId, filter: f },
+      query: { ...s.query, folderPage: 0, collectionId, filter: f },
       page: 0,
     })),
 
   resetFilter: () =>
     set((s) => ({
-      query: { ...s.query, collectionId: undefined, filter: {} },
+      query: { ...s.query, folderPage: 0, collectionId: undefined, filter: {} },
       page: 0,
     })),
 
@@ -231,7 +264,7 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
     set((s) => {
       const filter = { ...s.query.filter };
       delete filter[key];
-      return { query: { ...s.query, filter }, page: 0 };
+      return { query: { ...s.query, folderPage: 0, filter }, page: 0 };
     }),
 
   setSort: (field, order) =>
@@ -262,7 +295,7 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
     set({
       loading: true,
       searchError: null,
-      ...(changed ? { assets: [], total: 0, assetMap: new Map<string, Asset>() } : {}),
+      ...(changed ? { folders: [], folderTotal: 0, assets: [], total: 0, assetMap: new Map<string, Asset>() } : {}),
     });
     try {
       // Yazma duraklamasını bekleyen eski istekler veritabanına hiç gönderilmez.
@@ -274,7 +307,7 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
       displayedPage = page;
       displayedPageSize = pageSize;
       const assetMap = new Map(result.assets.map((a) => [a.id, a]));
-      set({ assets: result.assets, total: result.total, assetMap });
+      set({ assets: result.assets, total: result.total, folders: result.folders ?? [], folderTotal: result.folderTotal ?? 0, assetMap });
     } catch (error) {
       if (isCurrent()) {
         console.error('Asset search failed:', error);

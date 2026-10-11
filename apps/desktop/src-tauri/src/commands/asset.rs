@@ -1,11 +1,13 @@
 use std::sync::Arc;
 use std::path::Path;
+use std::collections::{HashMap, HashSet};
+use sqlx::{QueryBuilder, Sqlite};
 use tauri::{State, Emitter};
 use serde_json;
 
 use crate::AppState;
-use crate::models::{Asset, SearchPayload, SearchResult, AssetPatch};
-use crate::db::{resolve_path, make_relative_path};
+use crate::models::{Asset, RelatedImage, SearchPayload, SearchResult, AssetPatch};
+use crate::db::{resolve_path, make_relative_path, is_legacy_thumbnail};
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -49,7 +51,7 @@ fn row_to_asset(root: Option<&Path>, row: RawAssetRow) -> Asset {
         Some(r) => resolve_path(r, &row.file_path),
         None => row.file_path,
     };
-    let resolved_thumb_path = match (root, row.thumbnail_path) {
+    let resolved_thumb_path = match (root, row.thumbnail_path.filter(|path| !is_legacy_thumbnail(path))) {
         (Some(r), Some(t)) => Some(resolve_path(r, &t)),
         (_, t) => t,
     };
@@ -70,9 +72,64 @@ fn row_to_asset(root: Option<&Path>, row: RawAssetRow) -> Asset {
         tags,
         collections,
         thumbnail_path: resolved_thumb_path,
+        related_image: None,
         preview_status: row.preview_status,
         metadata,
     }
+}
+
+// Yalnız katalogdaki aynı klasör ve aynı gövde adlı görseller ilişkilendirilir.
+// Filtreler görseli gizlese de ilişki bulunur; kaynak sürücü tekrar taranmaz.
+async fn attach_related_images(pool: &sqlx::SqlitePool, root: &Path, assets: &mut [Asset]) -> Result<()> {
+    const SUFFIXES: [&str; 5] = ["", "_preview", "-preview", "_render", "-render"];
+    const EXTENSIONS: [&str; 4] = ["jpg", "jpeg", "png", "webp"];
+    let mut candidates = Vec::with_capacity(assets.len());
+    let mut unique = HashSet::new();
+
+    for asset in assets.iter() {
+        let mut paths = Vec::new();
+        if matches!(asset.kind.as_str(), "3d_model" | "material" | "other") {
+            let relative = make_relative_path(root, Path::new(&asset.file_path));
+            let (directory, name) = relative.rsplit_once('/').unwrap_or(("", &relative));
+            if let Some((stem, _)) = name.rsplit_once('.') {
+                for suffix in SUFFIXES {
+                    for ext in EXTENSIONS {
+                        let file = format!("{stem}{suffix}.{ext}");
+                        let path = if directory.is_empty() { file } else { format!("{directory}/{file}") };
+                        unique.insert(path.to_ascii_lowercase());
+                        paths.push(path.to_ascii_lowercase());
+                    }
+                }
+            }
+        }
+        candidates.push(paths);
+    }
+    if unique.is_empty() { return Ok(()); }
+
+    let mut images = HashMap::new();
+    let paths: Vec<_> = unique.into_iter().collect();
+    for chunk in paths.chunks(400) {
+        let mut query = QueryBuilder::<Sqlite>::new("SELECT file_path, file_name, thumbnail_path FROM assets WHERE file_path COLLATE NOCASE IN (");
+        let mut separated = query.separated(", ");
+        for path in chunk { separated.push_bind(path); }
+        separated.push_unseparated(") AND lower(extension) IN ('jpg','jpeg','png','webp')");
+        let rows: Vec<(String, String, Option<String>)> = query.build_query_as().fetch_all(pool).await.map_err(|e| e.to_string())?;
+        for (path, name, thumbnail) in rows { images.insert(path.to_ascii_lowercase(), (path, name, thumbnail)); }
+    }
+
+    for (asset, paths) in assets.iter_mut().zip(candidates) {
+        if let Some((path, name, thumbnail)) = paths.iter().find_map(|path| images.get(path)) {
+            let thumbnail_path = thumbnail.as_ref()
+                .filter(|thumb| !is_legacy_thumbnail(thumb))
+                .map(|thumb| resolve_path(root, thumb));
+            asset.related_image = Some(RelatedImage {
+                file_path: resolve_path(root, path),
+                file_name: name.clone(),
+                thumbnail_path,
+            });
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -80,57 +137,24 @@ pub async fn search_assets(
     payload: SearchPayload,
     state: State<'_, Arc<AppState>>,
 ) -> Result<SearchResult> {
-    let all_libs = state.db.get_all_libraries().await;
-    if !state.db.storage_errors.is_empty() {
+    search_catalogs(payload, &state.db).await
+}
+
+pub(crate) async fn search_catalogs(payload: SearchPayload, db: &crate::db::Database) -> Result<SearchResult> {
+    let all_libs = db.get_all_libraries().await;
+    if !db.storage_errors.is_empty() {
         return Err("Some catalogs could not be opened. Check the transfer errors in Storage settings.".into());
     }
-    let target_libs: Vec<(sqlx::Pool<sqlx::Sqlite>, Option<std::path::PathBuf>)> = {
-        let mut list = Vec::new();
-        if let Some(ref lids) = payload.query.library_ids {
-            if !lids.is_empty() {
-                for lib in &all_libs {
-                    if lids.contains(&lib.id) {
-                        list.push((lib.pool.clone(), Some(lib.root_path.clone())));
-                    }
-                }
-            }
-        } else if let Some(ref lid) = payload.query.library_id {
-            if !lid.is_empty() {
-                for lib in &all_libs {
-                    if &lib.id == lid {
-                        list.push((lib.pool.clone(), Some(lib.root_path.clone())));
-                    }
-                }
-            }
-        }
-
-        if list.is_empty() {
-            if all_libs.is_empty() {
-                list.push((state.db.get_active_pool().await, state.db.get_library_root(None).await));
-            } else {
-                for lib in &all_libs {
-                    list.push((lib.pool.clone(), Some(lib.root_path.clone())));
-                }
-            }
-        }
-        list
-    };
-
-    let offset = payload.page * payload.page_size;
-    let limit = payload.page_size;
-
-    let has_fts = !payload.query.text.trim().is_empty();
+    let target_libs: Vec<_> = all_libs.iter()
+        .filter(|lib| crate::folders::includes_library(&payload.query, &lib.id))
+        .map(|lib| (lib.pool.clone(), Some(lib.root_path.clone())))
+        .collect();
+    let limit = payload.page_size.clamp(1, 500);
+    let offset = payload.page.max(0).saturating_mul(limit);
     let f = &payload.query.filter;
 
     let mut conditions: Vec<String> = Vec::new();
     let mut binds: Vec<String> = Vec::new();
-
-    if has_fts {
-        conditions.push(
-            "a.id IN (SELECT id FROM assets_fts WHERE assets_fts MATCH ?)".into(),
-        );
-        binds.push(format!("{}*", payload.query.text.trim()));
-    }
 
     if let Some(kinds) = &f.kinds {
         if !kinds.is_empty() {
@@ -397,6 +421,20 @@ pub async fn search_assets(
         }
     }
 
+    // Aynı filtre koşulları hem dosyalarda hem klasörlerin altındaki dosyalarda kullanılır.
+    let (folders, folder_total) = crate::folders::search(&all_libs, &payload.query, limit, &conditions, &binds)
+        .await.map_err(|e| e.to_string())?;
+    for word in payload.query.text.split_whitespace() {
+        conditions.push("(a.id IN (SELECT id FROM assets_fts WHERE assets_fts MATCH ?) OR instr(lower(replace(catalog.root_path || '/' || a.file_path, char(92), '/')), lower(?)) > 0)".into());
+        binds.push(format!("\"{}\"*", word.replace('"', "\"\"")));
+        binds.push(word.replace('\\', "/"));
+    }
+    if let Some(path) = &payload.query.folder_path {
+        let prefix = if path.is_empty() { String::new() } else { format!("{}/", path.trim_end_matches('/')) };
+        conditions.push(crate::folders::DIRECT_FILES.into());
+        binds.extend([prefix.clone(), prefix.clone(), prefix]);
+    }
+
     let where_clause = if conditions.is_empty() {
         String::new()
     } else {
@@ -414,7 +452,7 @@ pub async fn search_assets(
     let sort_dir = if payload.query.sort.order == "asc" { "ASC" } else { "DESC" };
 
     let count_sql = format!(
-        "SELECT COUNT(*) FROM assets a {}",
+        "SELECT COUNT(*) FROM assets a CROSS JOIN (SELECT ? AS root_path) catalog {}",
         where_clause
     );
     let data_sql = format!(
@@ -425,7 +463,7 @@ pub async fn search_assets(
             a.preview_status, a.metadata,
             (SELECT json_group_array(tag_id) FROM asset_tags WHERE asset_id = a.id) AS tags,
             (SELECT json_group_array(collection_id) FROM collection_assets WHERE asset_id = a.id) AS collections
-           FROM assets a
+           FROM assets a CROSS JOIN (SELECT ? AS root_path) catalog
            {}
            ORDER BY {} {}
            LIMIT ? OFFSET ?"#,
@@ -435,13 +473,13 @@ pub async fn search_assets(
     if target_libs.len() == 1 {
         let (pool, root_opt) = &target_libs[0];
 
-        let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
+        let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql).bind(root_opt.as_ref().map(|root| root.to_string_lossy().into_owned()).unwrap_or_default());
         for b in &binds {
             count_query = count_query.bind(b.clone());
         }
         let total = count_query.fetch_one(pool).await.map_err(|e| e.to_string())?;
 
-        let mut data_query = sqlx::query_as::<_, RawAssetRow>(&data_sql);
+        let mut data_query = sqlx::query_as::<_, RawAssetRow>(&data_sql).bind(root_opt.as_ref().map(|root| root.to_string_lossy().into_owned()).unwrap_or_default());
         for b in &binds {
             data_query = data_query.bind(b.clone());
         }
@@ -449,12 +487,14 @@ pub async fn search_assets(
 
         let rows = data_query.fetch_all(pool).await.map_err(|e| e.to_string())?;
         let root_ref = root_opt.as_deref();
-        let assets = rows
+        let mut assets: Vec<Asset> = rows
             .into_iter()
             .map(|r| row_to_asset(root_ref, r))
             .collect();
+        if let Some(root) = root_ref { attach_related_images(pool, root, &mut assets).await?; }
 
         return Ok(SearchResult {
+            folders, folder_total,
             assets,
             total,
             page: payload.page,
@@ -472,7 +512,7 @@ pub async fn search_assets(
             a.preview_status, a.metadata,
             (SELECT json_group_array(tag_id) FROM asset_tags WHERE asset_id = a.id) AS tags,
             (SELECT json_group_array(collection_id) FROM collection_assets WHERE asset_id = a.id) AS collections
-           FROM assets a
+           FROM assets a CROSS JOIN (SELECT ? AS root_path) catalog
            {}
            ORDER BY {} {}
            LIMIT ?"#,
@@ -480,10 +520,10 @@ pub async fn search_assets(
     );
 
     let mut total: i64 = 0;
-    let mut all_assets: Vec<Asset> = Vec::new();
+    let mut all_assets: Vec<(Asset, usize)> = Vec::new();
 
-    for (pool, root_opt) in &target_libs {
-        let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
+    for (library_index, (pool, root_opt)) in target_libs.iter().enumerate() {
+        let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql).bind(root_opt.as_ref().map(|root| root.to_string_lossy().into_owned()).unwrap_or_default());
         for b in &binds {
             count_query = count_query.bind(b.clone());
         }
@@ -491,7 +531,7 @@ pub async fn search_assets(
             total += c;
         }
 
-        let mut data_query = sqlx::query_as::<_, RawAssetRow>(&multi_data_sql);
+        let mut data_query = sqlx::query_as::<_, RawAssetRow>(&multi_data_sql).bind(root_opt.as_ref().map(|root| root.to_string_lossy().into_owned()).unwrap_or_default());
         for b in &binds {
             data_query = data_query.bind(b.clone());
         }
@@ -499,15 +539,13 @@ pub async fn search_assets(
 
         if let Ok(rows) = data_query.fetch_all(pool).await {
             let root_ref = root_opt.as_deref();
-            for r in rows {
-                all_assets.push(row_to_asset(root_ref, r));
-            }
+            all_assets.extend(rows.into_iter().map(|r| (row_to_asset(root_ref, r), library_index)));
         }
     }
 
     let sort_field = payload.query.sort.field.as_str();
     let is_asc = payload.query.sort.order == "asc";
-    all_assets.sort_by(|a, b| {
+    all_assets.sort_by(|(a, _), (b, _)| {
         let cmp = match sort_field {
             "name"     => a.file_name.to_lowercase().cmp(&b.file_name.to_lowercase()),
             "size"     => a.size_bytes.cmp(&b.size_bytes),
@@ -519,13 +557,25 @@ pub async fn search_assets(
         if is_asc { cmp } else { cmp.reverse() }
     });
 
-    let paged_assets: Vec<Asset> = all_assets
+    let mut page_entries: Vec<(Asset, usize)> = all_assets
         .into_iter()
         .skip(offset as usize)
         .take(limit as usize)
         .collect();
 
+    for (library_index, (pool, root_opt)) in target_libs.iter().enumerate() {
+        let Some(root) = root_opt.as_deref() else { continue };
+        let positions: Vec<usize> = page_entries.iter().enumerate()
+            .filter_map(|(position, (_, index))| (*index == library_index).then_some(position))
+            .collect();
+        let mut assets: Vec<Asset> = positions.iter().map(|position| page_entries[*position].0.clone()).collect();
+        attach_related_images(pool, root, &mut assets).await?;
+        for (position, asset) in positions.into_iter().zip(assets) { page_entries[position].0 = asset; }
+    }
+    let paged_assets = page_entries.into_iter().map(|(asset, _)| asset).collect();
+
     Ok(SearchResult {
+        folders, folder_total,
         assets: paged_assets,
         total,
         page: payload.page,
@@ -557,7 +607,9 @@ pub async fn get_asset(
         .map_err(|e| e.to_string())?;
 
         if let Some(r) = row {
-            return Ok(row_to_asset(Some(&lib.root_path), r));
+            let mut assets = [row_to_asset(Some(&lib.root_path), r)];
+            attach_related_images(&lib.pool, &lib.root_path, &mut assets).await?;
+            return Ok(assets.into_iter().next().unwrap());
         }
     }
 

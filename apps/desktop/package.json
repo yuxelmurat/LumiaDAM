@@ -7,11 +7,12 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "preview": "vite preview",
-    "vite:dev": "vite",
-    "vite:build": "tsc -b && vite build",
+    "editor:prepare": "node ../../scripts/prepare-photocraft.mjs",
+    "vite:dev": "node ../../scripts/prepare-photocraft.mjs && vite",
+    "vite:build": "node ../../scripts/prepare-photocraft.mjs && tsc -b && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/search.test.cjs"
+    "test": "node --test tests/*.test.cjs"
   },
   "dependencies": {
     "@react-three/drei": "^9.113.0",

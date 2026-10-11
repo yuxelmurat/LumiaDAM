@@ -1,4 +1,28 @@
 /* App layout */
+.editorWorkspace { flex: 1; min-height: 0; }
+.editorEmpty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+.editorEmpty img { width: 56px; height: 56px; opacity: 0.85; }
+.editorEmpty h2 { color: var(--color-text-primary); font-size: 20px; }
+.editorEmpty p { max-width: 420px; }
+.editorEmpty button {
+  margin-top: 4px;
+  padding: 8px 14px;
+  color: #fff;
+  background: var(--color-brand-500);
+  border: 0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.editorEmpty button:hover { background: var(--color-brand-400); }
 .layout {
   display: flex;
   flex-direction: column;

@@ -40,11 +40,16 @@ export const AssetCard = memo(function AssetCard({
   asset, selected, onClick,
 }: AssetCardProps) {
   const [imgError, setImgError] = useState(false);
+  const [relatedSource, setRelatedSource] = useState<'thumb' | 'file' | 'error'>('thumb');
   const patchAsset = useAssetStore((s) => s.patchAsset);
 
   useEffect(() => {
     setImgError(false);
   }, [asset.thumbnailPath, asset.filePath]);
+
+  useEffect(() => {
+    setRelatedSource('thumb');
+  }, [asset.relatedImage?.filePath, asset.relatedImage?.thumbnailPath]);
 
   const KindIcon = KIND_ICON[asset.kind] ?? IconImage;
   const kindColor = KIND_COLOR[asset.kind];
@@ -115,7 +120,7 @@ export const AssetCard = memo(function AssetCard({
       onClick={handleClick}
       draggable
       onDragStart={handleDragStart}
-      title={asset.fileName}
+      title={asset.filePath}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && handleClick(e as unknown as React.MouseEvent)}
@@ -173,6 +178,18 @@ export const AssetCard = memo(function AssetCard({
           <div className={clsx(styles.previewBadge, styles.error)}>!</div>
         )}
 
+        {asset.relatedImage && relatedSource !== 'error' && (
+          <div className={styles.relatedImage} title={`Related image: ${asset.relatedImage.fileName}`}>
+            <img
+              src={convertFileSrc(relatedSource === 'thumb' && asset.relatedImage.thumbnailPath || asset.relatedImage.filePath)}
+              alt={`Related image: ${asset.relatedImage.fileName}`}
+              loading="lazy"
+              onError={() => setRelatedSource(relatedSource === 'thumb' && asset.relatedImage?.thumbnailPath ? 'file' : 'error')}
+            />
+            <span>Related image</span>
+          </div>
+        )}
+
         {/* Favorite toggle button */}
         <button
           id={`card-fav-${asset.id}`}
@@ -206,9 +223,10 @@ export const AssetCard = memo(function AssetCard({
 
       {/* Card body */}
       <div className={styles.body}>
-        <p className={clsx(styles.name, 'truncate')} title={asset.fileName}>
+        <p className={clsx(styles.name, 'truncate')} title={asset.filePath}>
           {asset.fileName}
         </p>
+        <p className={styles.filePath}>{asset.filePath}</p>
         <div className={styles.meta}>
           {asset.rating > 0 && (
             <div className={styles.stars}>

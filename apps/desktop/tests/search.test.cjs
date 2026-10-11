@@ -75,6 +75,70 @@ test('Kütüphane eklenemezse mevcut görünüm korunur', async () => {
   assert.equal(requests.length, 0);
 });
 
+test('Klasöre girip geri dönmek metin aramasını ve kütüphane kapsamını geri getirir', async () => {
+  const { store, ui, requests, finish } = setup();
+  store.getState().setQuery({ text: 'kitchen', libraryIds: ['first', 'second'], filter: { extensions: ['jpg'], kinds: ['texture'] } });
+  const folder = { libraryId: 'second', path: '2023/kitchen', fullPath: 'A:/Models/2023/kitchen', name: 'kitchen' };
+  const entering = store.getState().openFolder(folder);
+  assert.equal(requests[0].payload.query.text, '');
+  assert.equal(requests[0].payload.query.folderPath, '2023/kitchen');
+  assert.equal(requests[0].payload.query.libraryId, 'second');
+  assert.equal(requests[0].payload.query.libraryIds, undefined);
+  assert.deepEqual(Array.from(requests[0].payload.query.filter.extensions), ['jpg']);
+  assert.deepEqual(Array.from(requests[0].payload.query.filter.kinds), ['texture']);
+  assert.equal(ui.getState().activeLibraryId, 'second');
+  finish(0, 'zip');
+  await entering;
+  const back = store.getState().backFromFolder();
+  assert.equal(requests[1].payload.query.text, 'kitchen');
+  assert.equal(requests[1].payload.query.folderPath, undefined);
+  assert.deepEqual(Array.from(requests[1].payload.query.libraryIds), ['first', 'second']);
+  finish(1, 'kitchen-file');
+  await back;
+  assert.equal(store.getState().folderHistory.length, 0);
+  const again = store.getState().openFolder(folder);
+  finish(2, 'zip');
+  await again;
+  store.getState().setQuery({ libraryId: undefined, libraryIds: undefined });
+  assert.equal(store.getState().query.folderPath, undefined);
+  assert.equal(store.getState().folderHistory.length, 0);
+});
+
+test('Koleksiyon filtresi klasöre girince ve geri dönünce görünür ve etkin kalır', async () => {
+  const { store, ui, requests, finish } = setup();
+  ui.getState().setActiveCollection('collection');
+  store.getState().setQuery({ collectionId: 'collection', text: 'kitchen', filter: { extensions: ['jpg'] } });
+  const folder = { libraryId: 'library', path: 'kitchen', fullPath: 'A:/kitchen', name: 'kitchen' };
+  const entering = store.getState().openFolder(folder);
+  assert.equal(requests[0].payload.query.collectionId, 'collection');
+  assert.equal(requests[0].payload.query.libraryId, 'library');
+  assert.equal(requests[0].payload.query.filter.extensions[0], 'jpg');
+  assert.equal(ui.getState().activeCollectionId, 'collection');
+  finish(0, 'file');
+  await entering;
+  const back = store.getState().backFromFolder();
+  assert.equal(requests[1].payload.query.collectionId, 'collection');
+  assert.equal(requests[1].payload.query.text, 'kitchen');
+  assert.equal(ui.getState().activeCollectionId, 'collection');
+  finish(1, 'file');
+  await back;
+});
+
+test('Eski klasör sonuçları yeni aramayı ezmez; klasör sayfası metin değişince sıfırlanır', async () => {
+  const { store, requests } = setup();
+  store.getState().setQuery({ text: 'kitchen', folderPage: 2 });
+  const old = store.getState().search();
+  store.getState().setQuery({ text: 'salon' });
+  const current = store.getState().search();
+  assert.equal(requests[1].payload.query.folderPage, 0);
+  requests[1].resolve({ assets: [], total: 0, folders: [{ name: 'salon' }], folderTotal: 1 });
+  await current;
+  requests[0].resolve({ assets: [], total: 0, folders: [{ name: 'kitchen' }], folderTotal: 10 });
+  await old;
+  assert.equal(store.getState().folders[0].name, 'salon');
+  assert.equal(store.getState().folderTotal, 1);
+});
+
 test('Geç gelen eski filtre cevabı son seçilen filtrenin sonucunu ezmez', async () => {
   const { store, finish } = setup();
   store.getState().setFilter({ kinds: ['texture'] });

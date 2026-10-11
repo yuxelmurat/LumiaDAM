@@ -1,10 +1,12 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { open } from '@tauri-apps/plugin-dialog';
+import { api } from '../../api';
 import { useUIStore, useAssetStore, useLibraryStore } from '../../store';
 import { AssetCard } from './AssetCard';
 import { AssetListRow } from './AssetListRow';
 import { FilterBar } from './FilterBar';
+import { FolderNavigation, FolderResults } from './FolderBrowser';
 import type { Asset } from '../../types';
 import styles from './AssetGrid.module.css';
 
@@ -16,7 +18,25 @@ const GRID_COLS: Record<'sm' | 'md' | 'lg', number> = {
 
 export function AssetGrid() {
   const { viewMode, gridSize, selectedAssetIds, selectAsset, clearSelection } = useUIStore();
-  const { assets, loading, total, searchError, search } = useAssetStore();
+  const { assets, folders, folderTotal, loading, total, searchError, search, page, pageSize, setPage, query } = useAssetStore();
+  const [activeTab, setActiveTab] = useState<'files' | 'folders'>('files');
+  const requestedThumbnails = useRef(new Set<string>());
+
+  useEffect(() => { setActiveTab('files'); }, [query.folderPath]);
+  useEffect(() => {
+    // Eski ortak önbellek geçersizse yalnız görüntülenen sayfadaki görselleri yeniden üret.
+    const ids = assets.filter((asset) =>
+      asset.previewStatus === 'done' && !asset.thumbnailPath &&
+      ['jpg', 'jpeg', 'png', 'bmp', 'tif', 'tiff', 'tga', 'webp', 'hdr', 'exr'].includes(asset.extension) &&
+      !requestedThumbnails.current.has(asset.id)
+    ).map((asset) => asset.id);
+    if (!ids.length) return;
+    ids.forEach((id) => requestedThumbnails.current.add(id));
+    void api.requestPreview(ids).catch((error) => {
+      ids.forEach((id) => requestedThumbnails.current.delete(id));
+      console.error('Unable to rebuild thumbnails:', error);
+    });
+  }, [assets]);
 
   const tileSize = GRID_COLS[gridSize];
 
@@ -34,47 +54,51 @@ export function AssetGrid() {
     [selectAsset]
   );
 
-  if (searchError) {
-    return (
-      <div className={styles.container}>
-        <FilterBar />
+  return (
+    <div className={styles.container}>
+      <FilterBar />
+      <FolderNavigation />
+      <div className={styles.tabs} role="tablist" aria-label="Results" onKeyDown={(event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const next = event.key === 'Home' ? 'files' : event.key === 'End' ? 'folders' :
+          activeTab === 'files' ? 'folders' : 'files';
+        setActiveTab(next);
+        (event.currentTarget.querySelector(`[data-tab="${next}"]`) as HTMLButtonElement)?.focus();
+      }}>
+        <button type="button" role="tab" data-tab="files" id="files-tab" aria-controls="files-panel"
+          tabIndex={activeTab === 'files' ? 0 : -1} aria-selected={activeTab === 'files'}
+          className={clsx(styles.tab, activeTab === 'files' && styles.activeTab)}
+          onClick={() => setActiveTab('files')}>
+          Files <small>{total.toLocaleString()}</small>
+        </button>
+        <button type="button" role="tab" data-tab="folders" id="folders-tab" aria-controls="folders-panel"
+          tabIndex={activeTab === 'folders' ? 0 : -1} aria-selected={activeTab === 'folders'}
+          className={clsx(styles.tab, activeTab === 'folders' && styles.activeTab)}
+          onClick={() => setActiveTab('folders')}>
+          Folders <small>{folderTotal.toLocaleString()}</small>
+        </button>
+      </div>
+      {searchError ? (
         <div className={styles.empty} role="alert">
           <p className={styles.emptyText}>{searchError}</p>
-          <button type="button" className={styles.emptyBtn} onClick={() => search()}>
-            Try again
-          </button>
+          <button type="button" className={styles.emptyBtn} onClick={() => search()}>Try again</button>
         </div>
-      </div>
-    );
-  }
-
-  if (loading && assets.length === 0) {
-    return (
-      <div className={styles.container}>
-        <FilterBar />
+      ) : loading && assets.length === 0 && folders.length === 0 ? (
         <div className={styles.loadingGrid} style={{ '--tile-size': `${tileSize}px` } as React.CSSProperties}>
           {Array.from({ length: 24 }).map((_, i) => (
             <div key={i} className={clsx(styles.skeletonCard, 'skeleton')} />
           ))}
         </div>
-      </div>
-    );
-  }
-
-  if (!loading && assets.length === 0) {
-    return (
-      <div className={styles.container}>
-        <FilterBar />
+      ) : !loading && total === 0 && folderTotal === 0 ? (
         <EmptyState />
-      </div>
-    );
-  }
-
-  return (
-    <div className={styles.container}>
-      <FilterBar />
-      <div className={styles.scrollArea} onClick={handleBackdropClick}>
-        {viewMode === 'grid' ? (
+      ) : activeTab === 'folders' ? (
+        <div className={styles.scrollArea} role="tabpanel" id="folders-panel" aria-labelledby="folders-tab">
+          {folderTotal ? <FolderResults /> : <p className={styles.emptyText}>No matching folders.</p>}
+        </div>
+      ) : (
+      <div className={styles.scrollArea} role="tabpanel" id="files-panel" aria-labelledby="files-tab" onClick={handleBackdropClick}>
+        {total === 0 ? <p className={styles.emptyText}>No matching files. Check the Folders tab or adjust your filters.</p> : viewMode === 'grid' ? (
           <div
             className={styles.grid}
             style={{ '--tile-size': `${tileSize}px` } as React.CSSProperties}
@@ -101,17 +125,23 @@ export function AssetGrid() {
           </div>
         )}
       </div>
-      <div className={styles.footer}>
+      )}
+      {activeTab === 'files' && !searchError && <div className={styles.footer}>
+        {total > pageSize && <div className={styles.folderNavigation}>
+          <button type="button" disabled={page === 0} onClick={() => { setPage(page - 1); search(); }}>Previous files</button>
+          <button type="button" disabled={(page + 1) * pageSize >= total} onClick={() => { setPage(page + 1); search(); }}>Next files</button>
+        </div>}
         <span className={styles.footerCount}>
-          {assets.length} of {total.toLocaleString()} assets
+          {assets.length} of {total.toLocaleString()} files
         </span>
-      </div>
+      </div>}
     </div>
   );
 }
 
 function EmptyState() {
   const libraries = useLibraryStore((s) => s.libraries);
+  const folderPath = useAssetStore((s) => s.query.folderPath);
   const addLibrary = useLibraryStore((s) => s.addLibrary);
   const resetFilter = useAssetStore((s) => s.resetFilter);
   const search = useAssetStore((s) => s.search);
@@ -153,10 +183,12 @@ function EmptyState() {
         </svg>
       </div>
       <h2 className={styles.emptyTitle}>
-        {hasLibraries ? 'No matching assets found' : 'No libraries yet'}
+        {folderPath !== undefined ? 'No matching files or folders here' : hasLibraries ? 'No matching assets found' : 'No libraries yet'}
       </h2>
       <p className={styles.emptyText}>
-        {hasLibraries
+        {folderPath !== undefined
+          ? 'This folder is empty or no files match your current filters.'
+          : hasLibraries
           ? 'No assets match your current search or filter criteria.'
           : 'Add a library folder to start browsing your 3D assets, materials, textures, and videos.'}
       </p>
@@ -171,14 +203,14 @@ function EmptyState() {
             Clear Filters
           </button>
         )}
-        <button
+        {folderPath === undefined && <button
           type="button"
           className={hasLibraries ? styles.emptyBtnSecondary : styles.emptyBtn}
           id="empty-add-library"
           onClick={handleAddLibrary}
         >
           + Add Library
-        </button>
+        </button>}
       </div>
     </div>
   );

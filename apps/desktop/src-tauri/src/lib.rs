@@ -4,6 +4,7 @@ pub mod models;
 pub mod watcher;
 pub mod preview;
 pub mod storage;
+pub mod folders;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -70,10 +71,13 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::editor::read_editor_asset,
+            commands::editor::save_editor_export,
             commands::library::get_storage_settings,
             commands::library::set_storage_location,
             commands::library::add_library,
             commands::library::list_libraries,
+            commands::library::get_library_work_status,
             commands::library::remove_library,
             commands::library::refresh_library,
             commands::library::refresh_all_libraries,
