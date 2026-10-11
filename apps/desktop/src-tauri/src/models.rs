@@ -108,9 +108,19 @@ pub struct Asset {
     pub collections: Vec<String>,
     #[serde(rename = "thumbnailPath")]
     pub thumbnail_path: Option<String>,
+    #[serde(rename = "relatedImage", default)]
+    pub related_image: Option<RelatedImage>,
     #[serde(rename = "previewStatus")]
     pub preview_status: String,
     pub metadata: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelatedImage {
+    pub file_path: String,
+    pub file_name: String,
+    pub thumbnail_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,6 +180,10 @@ pub struct SearchPayload {
 
 #[derive(Debug, Deserialize)]
 pub struct SearchQuery {
+    #[serde(rename = "folderPath")]
+    pub folder_path: Option<String>,
+    #[serde(rename = "folderPage")]
+    pub folder_page: Option<i64>,
     pub text: String,
     pub filter: FilterSpec,
     pub sort: SortSpec,
@@ -243,11 +257,23 @@ pub struct SortSpec {
 
 #[derive(Debug, Serialize)]
 pub struct SearchResult {
+    pub folders: Vec<FolderResult>,
+    #[serde(rename = "folderTotal")]
+    pub folder_total: i64,
     pub assets: Vec<Asset>,
     pub total: i64,
     pub page: i64,
     #[serde(rename = "pageSize")]
     pub page_size: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderResult {
+    pub library_id: String,
+    pub path: String,
+    pub full_path: String,
+    pub name: String,
 }
 
 #[derive(Debug, Deserialize)]

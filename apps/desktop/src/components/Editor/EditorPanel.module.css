@@ -1,0 +1,7 @@
+.editor { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.bar { display: flex; align-items: center; gap: 16px; padding: 8px 12px; background: var(--color-bg-elevated); }
+.bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar button { margin-left: auto; flex-shrink: 0; }
+.message { display: flex; align-items: center; gap: 12px; padding: 6px 12px; font-size: 12px; overflow-wrap: anywhere; }
+.message[role='alert'] { color: #f3ad7c; }
+.frame { flex: 1; width: 100%; min-height: 0; border: 0; background: #262626; }

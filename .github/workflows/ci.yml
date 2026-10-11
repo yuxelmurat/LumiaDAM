@@ -44,10 +44,17 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install PhotoCraft web builder
+        run: cargo install trunk --version 0.21.14 --locked
+      - name: Test frontend behavior
+        run: pnpm --filter @lumiadam/desktop test
       # Note: vite:build in apps/desktop already executes "tsc -b && vite build",
       # validating all TypeScript types before generating the Vite build.
       - name: Build frontend bundle
-        run: pnpm --filter @opendam/desktop vite:build
+        run: pnpm --filter @lumiadam/desktop vite:build
 
   # ── Rust backend ──────────────────────────────────────────────────────────
   rust:
@@ -66,6 +73,12 @@ jobs:
       - name: Cargo clippy
         run: cargo clippy --all-targets -- -D warnings
         working-directory: apps/desktop/src-tauri
+      - name: Test catalog storage and migration
+        run: cargo test --lib storage::tests
+        working-directory: apps/desktop/src-tauri
+      - name: Test editor export protection
+        run: cargo test --lib commands::editor::tests
+        working-directory: apps/desktop/src-tauri
 
   # ── Python preview engine ────────────────────────────────────────────────
   python:
@@ -77,4 +90,5 @@ jobs:
       # without needing python setup or pip install
       - uses: astral-sh/ruff-action@v3
         with:
-          args: "check packages/preview-engine/"
+          args: "check"
+          src: "packages/preview-engine/"

@@ -10,21 +10,20 @@ fn main() {
     let is_silent = args.iter().any(|a| a == "--silent" || a == "-s" || a == "-y");
 
     println!("========================================================================");
-    println!("                  OpenDAM Post-Uninstall Cleanup Tool                   ");
+    println!("                  LumiaDAM Post-Uninstall Cleanup Tool                   ");
     println!("========================================================================");
     println!("This tool cleans residual app files, caches, shortcuts, and registry keys");
-    println!("left behind after uninstalling OpenDAM.\n");
+    println!("left behind after uninstalling LumiaDAM.\n");
     println!("IMPORTANT SAFETY GUARANTEE:");
     println!("  * Your asset libraries, 3D files, textures, and library databases");
-    println!("    ('.opendam/library.sqlite' inside your library directories)");
-    println!("    are NEVER touched and remain 100% safe and intact.\n");
+    println!("    (local catalogs and legacy .opendam databases) are preserved.\n");
     if is_dry_run {
         println!("[MODE: DRY RUN - No files or registry keys will be removed]");
     }
     println!("------------------------------------------------------------------------");
 
-    // 1. Terminate any running OpenDAM processes so files aren't locked
-    println!("[1/5] Checking for active OpenDAM processes...");
+    // 1. Dosya kilitlerini kaldırmak için LumiaDAM süreçlerini sonlandır.
+    println!("[1/5] Checking for active LumiaDAM processes...");
     terminate_processes(is_dry_run);
 
     let mut total_freed_bytes: u64 = 0;
@@ -35,6 +34,10 @@ fn main() {
     let target_dirs = get_candidate_directories();
     for dir in target_dirs {
         if dir.exists() {
+            if contains_catalog(&dir) {
+                println!("  Preserving catalog data: {}", dir.display());
+                continue;
+            }
             let size = calculate_dir_size(&dir);
             print!("  Removing: {} ({}) ... ", dir.display(), format_bytes(size));
             io::stdout().flush().ok();
@@ -99,7 +102,11 @@ fn main() {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     let file_name = entry.file_name().to_string_lossy().to_lowercase();
-                    if file_name.starts_with("opendam") || file_name.starts_with("com.opendam") {
+                    if file_name.starts_with("lumiadam") || file_name.starts_with("io.github.yuxelmurat.lumiadam") {
+                        if contains_catalog(&path) {
+                            println!("  Preserving catalog data: {}", path.display());
+                            continue;
+                        }
                         let size = calculate_dir_size(&path);
                         print!("  Removing temp item: {} ... ", path.display());
                         io::stdout().flush().ok();
@@ -133,12 +140,12 @@ fn main() {
     // 5. Clean residual registry keys
     println!("\n[5/5] Cleaning residual registry keys...");
     let reg_keys = [
-        "HKCU\\Software\\OpenDAM",
-        "HKCU\\Software\\com.opendam.desktop",
-        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OpenDAM",
-        "HKLM\\Software\\OpenDAM",
-        "HKLM\\Software\\com.opendam.desktop",
-        "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OpenDAM",
+        "HKCU\\Software\\yuxelmurat\\LumiaDAM",
+        "HKCU\\Software\\io.github.yuxelmurat.lumiadam",
+        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\LumiaDAM",
+        "HKLM\\Software\\yuxelmurat\\LumiaDAM",
+        "HKLM\\Software\\io.github.yuxelmurat.lumiadam",
+        "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\LumiaDAM",
     ];
 
     for key in &reg_keys {
@@ -163,7 +170,7 @@ fn main() {
     println!("========================================================================");
     println!("Items Processed: {}", total_removed_items);
     println!("Disk Space Freed: {}", format_bytes(total_freed_bytes));
-    println!("[CONFIRMED] Library directories and database files (.opendam/library.sqlite)");
+    println!("[CONFIRMED] Library directories and catalog databases");
     println!("            were completely untouched and remain intact.");
     println!("========================================================================");
 
@@ -174,8 +181,21 @@ fn main() {
     }
 }
 
+// Yerel kataloglar artık uygulama verisi içinde de bulunabilir. Okunamayan
+// veya bağlantı içeren klasörleri de silmeyerek bilinmeyen veriyi koru.
+fn contains_catalog(path: &Path) -> bool {
+    let Ok(metadata) = fs::symlink_metadata(path) else { return true; };
+    if metadata.file_type().is_symlink() { return true; }
+    if metadata.is_file() {
+        return path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("sqlite"))
+            || path.file_name().is_some_and(|name| name == ".lumiadam-catalog");
+    }
+    let Ok(entries) = fs::read_dir(path) else { return true; };
+    entries.into_iter().any(|entry| entry.map_or(true, |entry| contains_catalog(&entry.path())))
+}
+
 fn terminate_processes(is_dry_run: bool) {
-    let procs = ["opendam.exe", "opendam-desktop.exe"];
+    let procs = ["lumiadam.exe", "lumiadam-desktop.exe"];
     for proc in procs {
         if is_dry_run {
             println!("  [DRY RUN] Would check/kill process: {}", proc);
@@ -193,36 +213,36 @@ fn get_candidate_directories() -> Vec<PathBuf> {
 
     if let Ok(appdata) = env::var("APPDATA") {
         let p = PathBuf::from(&appdata);
-        dirs.push(p.join("com.opendam.desktop"));
-        dirs.push(p.join("OpenDAM"));
+        dirs.push(p.join("io.github.yuxelmurat.lumiadam"));
+        dirs.push(p.join("LumiaDAM"));
     }
 
     if let Ok(localappdata) = env::var("LOCALAPPDATA") {
         let p = PathBuf::from(&localappdata);
-        dirs.push(p.join("com.opendam.desktop"));
-        dirs.push(p.join("OpenDAM"));
+        dirs.push(p.join("io.github.yuxelmurat.lumiadam"));
+        dirs.push(p.join("LumiaDAM"));
     }
 
     if let Ok(userprofile) = env::var("USERPROFILE") {
         let p = PathBuf::from(&userprofile);
-        dirs.push(p.join("AppData").join("LocalLow").join("com.opendam.desktop"));
-        dirs.push(p.join("AppData").join("LocalLow").join("OpenDAM"));
+        dirs.push(p.join("AppData").join("LocalLow").join("io.github.yuxelmurat.lumiadam"));
+        dirs.push(p.join("AppData").join("LocalLow").join("LumiaDAM"));
     }
 
     if let Ok(programdata) = env::var("ProgramData") {
         let p = PathBuf::from(&programdata);
-        dirs.push(p.join("OpenDAM"));
-        dirs.push(p.join("com.opendam.desktop"));
+        dirs.push(p.join("LumiaDAM"));
+        dirs.push(p.join("io.github.yuxelmurat.lumiadam"));
     }
 
     if let Ok(programfiles) = env::var("ProgramFiles") {
         let p = PathBuf::from(&programfiles);
-        dirs.push(p.join("OpenDAM"));
+        dirs.push(p.join("LumiaDAM"));
     }
 
     if let Ok(programfiles_x86) = env::var("ProgramFiles(x86)") {
         let p = PathBuf::from(&programfiles_x86);
-        dirs.push(p.join("OpenDAM"));
+        dirs.push(p.join("LumiaDAM"));
     }
 
     dirs
@@ -233,10 +253,10 @@ fn get_candidate_shortcuts() -> Vec<PathBuf> {
 
     if let Ok(userprofile) = env::var("USERPROFILE") {
         let desktop = PathBuf::from(&userprofile).join("Desktop");
-        shortcuts.push(desktop.join("OpenDAM.lnk"));
+        shortcuts.push(desktop.join("LumiaDAM.lnk"));
     }
 
-    shortcuts.push(PathBuf::from(r"C:\Users\Public\Desktop\OpenDAM.lnk"));
+    shortcuts.push(PathBuf::from(r"C:\Users\Public\Desktop\LumiaDAM.lnk"));
 
     if let Ok(appdata) = env::var("APPDATA") {
         let start_menu = PathBuf::from(&appdata)
@@ -244,8 +264,8 @@ fn get_candidate_shortcuts() -> Vec<PathBuf> {
             .join("Windows")
             .join("Start Menu")
             .join("Programs");
-        shortcuts.push(start_menu.join("OpenDAM.lnk"));
-        shortcuts.push(start_menu.join("OpenDAM"));
+        shortcuts.push(start_menu.join("LumiaDAM.lnk"));
+        shortcuts.push(start_menu.join("LumiaDAM"));
     }
 
     if let Ok(programdata) = env::var("ProgramData") {
@@ -254,8 +274,8 @@ fn get_candidate_shortcuts() -> Vec<PathBuf> {
             .join("Windows")
             .join("Start Menu")
             .join("Programs");
-        shortcuts.push(common_start_menu.join("OpenDAM.lnk"));
-        shortcuts.push(common_start_menu.join("OpenDAM"));
+        shortcuts.push(common_start_menu.join("LumiaDAM.lnk"));
+        shortcuts.push(common_start_menu.join("LumiaDAM"));
     }
 
     shortcuts
@@ -295,5 +315,25 @@ fn format_bytes(bytes: u64) -> String {
         format!("{:.2} KB", bytes as f64 / KB as f64)
     } else {
         format!("{} B", bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn catalog_directories_are_preserved() {
+        let unique = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = env::temp_dir().join(format!("lumiadam-cleanup-test-{}", unique));
+        fs::create_dir_all(root.join("data")).unwrap();
+        assert!(!contains_catalog(&root));
+        fs::write(root.join("data/opendam.sqlite"), b"catalog").unwrap();
+        assert!(contains_catalog(&root));
+        fs::remove_file(root.join("data/opendam.sqlite")).unwrap();
+        fs::write(root.join("data/.lumiadam-catalog"), b"id").unwrap();
+        assert!(contains_catalog(&root));
+        assert!(contains_catalog(&root.join("unavailable")));
+        fs::remove_dir_all(root).unwrap();
     }
 }

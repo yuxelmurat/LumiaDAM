@@ -1,11 +1,11 @@
 {
-  "name": "opendam",
+  "name": "lumiadam",
   "private": true,
   "version": "0.1.0",
-  "description": "Open-source digital asset manager for 3D/AEC/design files",
+  "description": "LumiaDAM — 3D, mimarlık ve tasarım dosyaları için yerel dijital varlık yöneticisi",
   "scripts": {
-    "dev": "pnpm --filter @opendam/desktop dev",
-    "build": "pnpm --filter @opendam/desktop build",
+    "dev": "pnpm --filter @lumiadam/desktop dev",
+    "build": "pnpm --filter @lumiadam/desktop build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test"
@@ -18,5 +18,11 @@
     "typescript": "^5.6.3",
     "prettier": "^3.3.3",
     "eslint": "^9.13.0"
-  }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yuxelmurat/LumiaDAM.git"
+  },
+  "homepage": "https://github.com/yuxelmurat/LumiaDAM#readme"
 }

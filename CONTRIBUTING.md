@@ -1,154 +1,76 @@
-# Contributing to OpenDAM 🤝
+# LumiaDAM geliştirme rehberi
 
-Thank you for your interest in contributing to **OpenDAM**! OpenDAM is the first free and open-source Digital Asset Management (DAM) system engineered specifically for 3D artists, architects, visualizers, and creative studios.
+LumiaDAM, [OpenDAM](https://github.com/LawLaw09/OpenDAM) tabanlı bir geliştirme fork'udur. Orijinal MIT lisansını ve katkı bildirimlerini koruyun. Mevcut işlevleri, deneysel kodu ve planlanan özellikleri açıkça ayırın.
 
-We welcome all contributions: bug fixes, new 3D/CAD format parsers, performance optimizations, UI improvements, DCC plugins, and documentation.
+## Depo yapısı
 
----
+| Yol | İçerik |
+| --- | --- |
+| `apps/desktop/src` | React, TypeScript, Zustand ve CSS Modules arayüzü |
+| `apps/desktop/src-tauri` | Tauri 2 / Rust, SQLite, indeksleme ve Windows installer |
+| `packages/preview-engine` | Python önizleme işçisi |
+| `packages/dcc-bridge` | Deneysel DCC protokol tipleri |
+| `plugins/blender` | Deneysel Blender köprüsü |
+| `tools/cleanup` | Windows kurulum kalıntıları için yardımcı araç |
+| `docs` | Mimari ve marka/uyumluluk notları |
 
-## 🏗️ Repository Architecture
+## Windows ortamı
 
-OpenDAM is structured as a high-performance monorepo using **pnpm workspaces**:
+- Node.js 20+ ve pnpm 9+.
+- Güncel Rust stable, `x86_64-pc-windows-msvc` toolchain. Eski Rust 1.80 minimumu güncel bağımlılıklarla doğrulanmış değildir.
+- Visual Studio C++ Build Tools, Windows SDK ve WebView2 Runtime.
+- Python önizlemeleri için Python 3.10+; bazı biçimler ayrıca yerel kütüphaneler gerektirir.
 
-```
-opendam/
-├── apps/
-│   └── desktop/
-│       ├── src/               # React 18 + TypeScript + Vite + Zustand frontend
-│       │   ├── components/    # Modular UI components (AssetGrid, DetailPanel, Sidebar, etc.)
-│       │   ├── store/         # Zustand state management stores
-│       │   └── types/         # Core TypeScript domain models
-│       └── src-tauri/         # Rust backend (Tauri v2)
-│           ├── migrations/    # SQLite DDL schemas (master & per-library DBs)
-│           ├── src/
-│           │   ├── commands/  # Tauri IPC commands callable from frontend
-│           │   ├── db.rs      # Multi-library SQLite connection manager & NAS pragmas
-│           │   ├── preview.rs # In-process Rust image thumbnailer & persistent Python bridge
-│           │   └── watcher.rs # High-speed in-memory directory indexing & change detection
-│           └── Cargo.toml
-├── packages/
-│   └── preview-engine/        # Headless Python daemon worker for 3D/CAD/DCC formats
-│       ├── worker.py          # JSON-RPC listener (Max, Revit, SketchUp, FBX, Rhino, VRmat, etc.)
-│       └── pyproject.toml
-├── plugins/
-│   └── blender/               # DCC integration bridge plugins
-└── docs/                      # Architectural Decision Records (ADRs) and system specs
+```powershell
+git clone https://github.com/yuxelmurat/LumiaDAM.git
+cd LumiaDAM
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
----
+Python işçisi isteğe bağlı olarak şöyle hazırlanır:
 
-## 🛠️ Prerequisites
+```powershell
+python -m venv packages/preview-engine/venv
+.\packages\preview-engine\venv\Scripts\python.exe -m pip install -r packages/preview-engine/requirements.txt
 
-Before developing locally, ensure you have the following installed:
-
-1. **Node.js**: `v20.x` or later ([nodejs.org](https://nodejs.org))
-2. **pnpm**: `v9.x` or later (`npm install -g pnpm`)
-3. **Rust**: `1.80+` stable toolchain ([rustup.rs](https://rustup.rs))
-4. **Python**: `3.10+` with `pip` ([python.org](https://python.org))
-5. **C++ Build Tools**: (On Windows, Visual Studio C++ Build Tools with Windows SDK)
-
----
-
-## 🚀 Development Setup
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/LawLaw09/OpenDAM.git
-   cd opendam
-   ```
-
-2. **Install frontend dependencies**:
-   ```bash
-   pnpm install
-   ```
-
-3. **Set up the Python preview engine virtualenv**:
-   ```bash
-   cd packages/preview-engine
-   python -m venv venv
-   # On Windows:
-   .\venv\Scripts\pip install -r requirements.txt
-   # On macOS/Linux:
-   ./venv/bin/pip install -r requirements.txt
-   cd ../..
-   ```
-
-4. **Run OpenDAM in development mode**:
-   ```bash
-   # Starts the Vite dev server with hot reload and launches the Tauri window
-   pnpm dev
-   ```
-
----
-
-## 🧪 Pre-PR Validation Checklist
-
-Before submitting a Pull Request, ensure that all automated checks pass locally. These match the automated GitHub Actions CI pipeline:
-
-### 1. Frontend Typecheck & Build
-```bash
-pnpm --filter @opendam/desktop vite:build
+# Eski ortam değişkeni adları uyumluluk için korunmuştur.
+$env:OPENDAM_PYTHON = (Resolve-Path packages/preview-engine/venv/Scripts/python.exe).Path
+$env:OPENDAM_WORKER = (Resolve-Path packages/preview-engine/worker.py).Path
+pnpm dev
 ```
 
-### 2. Rust Clippy & Compilation
-```bash
-cd apps/desktop/src-tauri
-cargo clippy --all-targets -- -D warnings
-cargo check
-cd ../../
-```
+İşçi bu konumları otomatik de arar. OpenImageIO/Assimp gibi bağımlılıklar platforma göre ek kurulum gerektirebilir. Installer henüz bu ortamı kendi içinde dağıtmaz.
 
-### 3. Python Preview Engine Lint
-```bash
+## Doğrulama
+
+Komutları depo kökünde çalıştırın:
+
+```powershell
+pnpm --filter @lumiadam/desktop vite:build
+cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
 ruff check packages/preview-engine/
+pnpm build
 ```
 
----
+CI, ön yüz derlemesi, Rust Clippy ve Python Ruff kontrolü içerir. Kök `pnpm test` komutu mevcut test paketi bulunduğunun kanıtı değildir; yapılandırılmış kapsamlı bir test paketi yoktur. Başarısız kontrolü geçti diye raporlamayın; kullanılan sürümleri ve ilk ilgili hatayı PR'a yazın.
 
-## 📐 Core Architectural Principles
+Tauri derlemesi JavaScript/Rust sürüm uyuşmazlığı bildirirse gerçek sürümleri `pnpm --filter @lumiadam/desktop exec tauri info` ile inceleyin. Sürüm kontrolünü atlamayın. Bu dönüşümde tekrar derlemeyi engelleyen dört paket hizalanmıştır: Rust Tauri 2.12.2 / JavaScript API 2.12.1 (uyumlu 2.12 minor), dialog 2.8.1, fs 2.6.0, shell 2.4.1. JavaScript ve Rust taraflarında sürümler sabitlenmiştir; ileride birlikte güncelleyin. Cargo kilit dosyaları upstream'de takip edilmediğinden Rust çözümlemesi zamanla değişebilir.
 
-When contributing code, please adhere to our core design principles:
+Mevcut başlangıç kodunda iki ek kontrol sorunu vardır: kök `pnpm typecheck`, deneysel `packages/dcc-bridge` paketinin `tsconfig.json` dosyası olmadığı için başarısız olur; Python Ruff kontrolü `worker.py` içindeki `UP038` uyarısını bildirir. Masaüstü için yukarıdaki hedefli TypeScript/Vite kontrolünü kullanın. Bu sorunlar marka dönüşümünde işlevsel düzeltme olarak ele alınmamıştır.
 
-### 1. NAS & Local-First Safety
-- **Rollback Journaling**: OpenDAM explicitly uses SQLite `DELETE` (rollback) journaling for `.opendam/library.sqlite` databases. **Never change this to WAL mode for library databases**, as SQLite WAL shared-memory (`-shm`) locking is unreliable on network file shares (SMB/NFS) and can cause silent corruption across multi-user environments.
-- **Batch Commits**: Always batch database writes (200+ items per transaction) to protect NAS spinning disks and network file shares from I/O exhaustion.
-- **Relative File Paths**: All paths stored in library SQLite databases must be relative to the library root (`.opendam/thumbs/...` or `textures/...`). Never store machine-specific absolute drive letters (`C:\`, `D:\`) in `.opendam/library.sqlite`.
+## Veri ve marka uyumluluğu
 
-### 2. Zero Telemetry & Privacy
-- OpenDAM has **zero analytics, zero telemetry, and zero cloud tracking**. No external API calls may be added to third-party tracking services.
+- Uygulama arayüzündeki metinleri ve uygulamanın ürettiği hata mesajlarını İngilizce yazın. Kod açıklamaları ve geliştirme notları Türkçe olabilir.
+- Simge veya arayüz değişikliklerinde `build.rs` dosyasındaki `icons` ve `../dist` bağımlılıklarını koruyun; aksi halde eski kaynaklar EXE içinde kalabilir. Windows simgesini yalnız PNG dosyasında değil, derlenmiş EXE'den çıkararak da kontrol edin.
 
-### 3. High Performance First
-- **Native Rust Resizing**: Standard raster images (`.jpg`, `.png`, `.tga`, `.tif`, `.bmp`, `.webp`) must be handled directly in Rust via the `image` crate. Do not dispatch standard raster images to Python.
-- **Persistent Workers**: When calling external workers (like Python), never spawn new processes per file. Communicate through persistent stdin/stdout streaming daemons.
+- Eski `.opendam` kataloglarının aktarım uyumluluğunu koruyun. Yeni katalogları kaynak arşive yazmayın; kaynak yollarını ve yerel önizleme yollarını ayırın. [Depolama düzeni](docs/storage.md).
+- Kütüphane SQLite bağlantılarındaki rollback journal yaklaşımını marka dönüşümünde değiştirmeyin.
+- `OPENDAM_PYTHON`, `OPENDAM_WORKER`, `application/opendam-asset-id` ve Blender operator kimlikleri geriye uyumluluk yüzeyleridir.
+- Yeni uygulama kimliği OpenDAM'den ayrı ayarlar oluşturur. Otomatik veri taşıma yoktur.
+- Silme ve temizlik işlemlerini gerçek arşivde test etmeyin. Temizlik aracı için yalnızca `--dry-run --silent` kullanın; OpenDAM klasörlerini hedeflemediğini doğrulayın.
+- Logo dosyaları ve üretim komutları [marka notlarında](docs/branding.md) açıklanır.
 
----
+## Katkı akışı
 
-## 🌿 Git & Pull Request Guidelines
-
-1. **Branch Naming**:
-   - `feat/feature-name` (e.g., `feat/blender-material-preview`)
-   - `fix/bug-description` (e.g., `fix/exr-alpha-rendering`)
-   - `perf/optimization` (e.g., `perf/sqlite-index-optimization`)
-   - `docs/documentation-update`
-
-2. **Commit Messages**:
-   Follow [Conventional Commits](https://www.conventionalcommits.org/):
-   - `feat: add thumbnail extractor for Rhino .3dm curves`
-   - `fix: resolve crash on corrupted DWG header sentinel`
-   - `perf: implement persistent Python worker loop`
-   - `docs: update build instructions for Linux`
-
-3. **Pull Request Process**:
-   - Open a PR against the `main` branch.
-   - Fill out the PR template with a description of the changes and how you verified them.
-   - Ensure the CI workflow passes on your PR.
-
----
-
-## 💬 Community & Questions
-
-Have questions, ideas, or feedback?
-- Open an [Issue](https://github.com/LawLaw09/OpenDAM/issues) for bug reports and feature proposals.
-- Join the discussion in [GitHub Discussions](https://github.com/LawLaw09/OpenDAM/discussions).
-
-Thank you for helping make OpenDAM the best open-source asset manager for creators worldwide!
+Ayrı feature branch açın, değişikliği küçük tutun, kontrolleri çalıştırın ve [LumiaDAM Pull Requests](https://github.com/yuxelmurat/LumiaDAM/pulls) üzerinden `main` dalına PR hazırlayın. Issues/Discussions şu anda kapalıdır. Yeni özellik ve performans iddialarını ölçüm veya doğrulama olmadan tamamlanmış gibi yazmayın.

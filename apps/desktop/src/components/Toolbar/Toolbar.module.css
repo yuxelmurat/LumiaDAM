@@ -12,16 +12,39 @@
 }
 
 /* No-drag regions within the toolbar */
-.brand, .searchContainer, .searchWrap, .controls {
+.brandMenu, .searchContainer, .searchWrap, .controls, .editorTitle {
   -webkit-app-region: no-drag;
 }
 
 /* Brand */
-.brand {
+.brandMenu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.brandTrigger {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  flex-shrink: 0;
+  gap: 8px;
+  height: 36px;
+  padding: 0 8px 0 4px;
+  color: var(--color-text-primary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.brandTrigger:hover,
+.brandTrigger[aria-expanded='true'] {
+  background: var(--color-bg-elevated);
+  border-color: var(--color-border);
+}
+
+.brandTrigger:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
 }
 
 .logo {
@@ -29,13 +52,64 @@
   height: 24px;
   flex-shrink: 0;
 }
-.logo svg { width: 100%; height: 100%; }
 
 .appName {
   font-size: 13px;
   font-weight: 600;
   color: var(--color-text-primary);
   letter-spacing: 0.02em;
+}
+
+.menuIcon { color: var(--color-text-secondary); margin-left: 2px; }
+
+.appMenu {
+  position: absolute;
+  z-index: 12000;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 210px;
+  padding: 6px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-hover);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  animation: menuIn 120ms ease-out;
+}
+
+.appMenu button {
+  width: 100%;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-md);
+  font: 500 13px var(--font-sans);
+  cursor: pointer;
+  text-align: left;
+}
+
+.appMenu button:hover { background: var(--color-bg-overlay); color: var(--color-text-primary); }
+.appMenu button:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: -2px; }
+.appMenu .menuItemActive { color: var(--color-brand-300); background: hsl(220 85% 50% / 0.12); }
+.menuDivider { height: 1px; margin: 5px 8px; background: var(--color-border); }
+
+.editorTitle {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.editorTitle span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@keyframes menuIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* Search Container & Subcollection Checkbox */

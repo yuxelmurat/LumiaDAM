@@ -4,12 +4,120 @@ use tauri::{State, Emitter};
 use uuid::Uuid;
 use chrono::Utc;
 use serde_json;
+use std::sync::atomic::Ordering;
 
 use crate::AppState;
 use crate::models::{Library, AddLibraryPayload};
 use crate::watcher;
 
 type Result<T> = std::result::Result<T, String>;
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryWorkStatus {
+    id: String,
+    name: String,
+    scanning: bool,
+    scanned_files: u64,
+    estimated_remaining: Option<u64>,
+    last_scan_at: Option<i64>,
+    last_error: Option<String>,
+    preview_total: i64,
+    preview_completed: i64,
+    preview_pending: i64,
+    preview_failed: i64,
+}
+
+#[tauri::command]
+pub async fn get_library_work_status(state: State<'_, Arc<AppState>>) -> Result<Vec<LibraryWorkStatus>> {
+    let libraries = state.db.get_all_libraries().await;
+    let mut statuses = Vec::with_capacity(libraries.len());
+    for library in libraries {
+        let scanning = library.scan_lock.try_lock().is_err();
+        let scanned_files = library.scan_processed.load(Ordering::Relaxed);
+        let previous_count: i64 = sqlx::query_scalar("SELECT asset_count FROM libraries WHERE id = ?")
+            .bind(&library.id).fetch_optional(&state.db.master_pool).await.map_err(|e| e.to_string())?
+            .unwrap_or(0);
+        let last_scan_at = sqlx::query_scalar::<_, String>("SELECT value FROM settings WHERE key = ?")
+            .bind(format!("last_scan:{}", library.id))
+            .fetch_optional(&state.db.master_pool).await.map_err(|e| e.to_string())?
+            .and_then(|value| value.parse::<i64>().ok());
+        let last_error = sqlx::query_scalar::<_, String>("SELECT value FROM settings WHERE key = ?")
+            .bind(format!("scan_error:{}", library.id))
+            .fetch_optional(&state.db.master_pool).await.map_err(|e| e.to_string())?;
+        let (preview_total, preview_completed, preview_pending, preview_failed): (i64, i64, i64, i64) =
+            sqlx::query_as("SELECT COUNT(*), COALESCE(SUM(status = 'done'), 0), COALESCE(SUM(status IN ('pending', 'queued', 'processing')), 0), COALESCE(SUM(status = 'error'), 0) FROM preview_jobs")
+                .fetch_one(&library.pool).await.map_err(|e| e.to_string())?;
+        statuses.push(LibraryWorkStatus {
+            id: library.id,
+            name: library.name,
+            scanning,
+            scanned_files,
+            estimated_remaining: (scanning && previous_count > 0)
+                .then_some((previous_count as u64).saturating_sub(scanned_files)),
+            last_scan_at,
+            last_error,
+            preview_total,
+            preview_completed,
+            preview_pending,
+            preview_failed,
+        });
+    }
+    Ok(statuses)
+}
+
+async fn record_scan_error(db: &crate::db::Database, id: &str, error: &str) {
+    let _ = sqlx::query("INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .bind(format!("scan_error:{id}"))
+        .bind(error)
+        .execute(&db.master_pool).await;
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageSettings {
+    active_path: String,
+    selected_path: String,
+    default_path: String,
+    restart_required: bool,
+    errors: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn get_storage_settings(state: State<'_, Arc<AppState>>) -> Result<StorageSettings> {
+    let selected: Option<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'storage_root'")
+        .fetch_optional(&state.db.master_pool).await.map_err(|e| e.to_string())?;
+    let default_path = state.db.default_storage_root.to_string_lossy().to_string();
+    let selected_path = selected.unwrap_or_else(|| default_path.clone());
+    let active_path = state.db.storage_root.to_string_lossy().to_string();
+    Ok(StorageSettings {
+        restart_required: selected_path != active_path,
+        active_path, selected_path, default_path, errors: state.db.storage_errors.clone(),
+    })
+}
+
+#[tauri::command]
+pub async fn set_storage_location(path: String, state: State<'_, Arc<AppState>>) -> Result<StorageSettings> {
+    let location = PathBuf::from(&path);
+    let rows: Vec<(String, Option<String>)> = sqlx::query_as("SELECT root_paths, catalog_path FROM libraries")
+        .fetch_all(&state.db.master_pool).await.map_err(|e| e.to_string())?;
+    let mut roots = Vec::new();
+    let mut catalogs = Vec::new();
+    for (paths, catalog) in rows {
+        let paths: Vec<PathBuf> = serde_json::from_str(&paths).map_err(|e| e.to_string())?;
+        roots.extend(paths);
+        if let Some(catalog) = catalog { catalogs.push(PathBuf::from(catalog)); }
+    }
+    // Sürücünün tamamı kaynak olsa da varsayılan yerel veri alanı kullanılabilir.
+    if location == state.db.default_storage_root {
+        std::fs::create_dir_all(&location).map_err(|e| e.to_string())?;
+        roots.clear();
+    }
+    crate::storage::validate_location(&location, &roots, &catalogs).map_err(|e| format!("{:#}", e))?;
+    sqlx::query("INSERT INTO settings(key, value) VALUES('storage_root', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .bind(path).execute(&state.db.master_pool).await.map_err(|e| e.to_string())?;
+    get_storage_settings(state).await
+}
 
 #[tauri::command]
 pub async fn add_library(
@@ -22,20 +130,22 @@ pub async fn add_library(
 
     let first_path = payload.root_paths.first().ok_or("No root path provided")?;
     let root_path = PathBuf::from(first_path);
+    let name = crate::db::library_name(&payload.name, first_path);
 
-    // Register library in memory & open its .opendam/library.sqlite with NAS pragmas
-    let _handle = state.db.register_library(&id, &payload.name, &root_path)
+    // Katalog arşivden ayrı depolanır; eski katalog varsa güvenli kopyası alınır.
+    let handle = state.db.register_library(&id, &name, &root_path)
         .await
         .map_err(|e| e.to_string())?;
 
     // Record in master database
     sqlx::query(
-        "INSERT INTO libraries (id, name, root_paths, created_at, asset_count) VALUES (?, ?, ?, ?, 0)"
+        "INSERT INTO libraries (id, name, root_paths, created_at, asset_count, catalog_path) VALUES (?, ?, ?, ?, 0, ?)"
     )
     .bind(&id)
-    .bind(&payload.name)
+    .bind(&name)
     .bind(&root_paths_json)
     .bind(now)
+    .bind(handle.catalog_dir.to_string_lossy().as_ref())
     .execute(&state.db.master_pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -47,14 +157,15 @@ pub async fn add_library(
     tokio::spawn(async move {
         if let Err(e) = watcher::index_paths(&state_clone.db, &lib_id, &paths).await {
             tracing::error!("Failed to index library {}: {}", lib_id, e);
-        } else {
-            let _ = state_clone.app_handle.emit("library:updated", ());
+            record_scan_error(&state_clone.db, &lib_id, &e.to_string()).await;
         }
+        // Tarama yarıda kalsa da içe alınan katalog ve tamamlanan kayıtlar görünür olmalı.
+        let _ = state_clone.app_handle.emit("library:updated", ());
     });
 
     Ok(Library {
         id,
-        name: payload.name,
+        name,
         root_paths: payload.root_paths,
         created_at: now,
         asset_count: 0,
@@ -110,7 +221,10 @@ pub async fn refresh_library(
 
     if let Some((root_paths_json,)) = row {
         let paths: Vec<String> = serde_json::from_str(&root_paths_json).unwrap_or_default();
-        watcher::index_paths(&state.db, &id, &paths).await.map_err(|e| e.to_string())?;
+        if let Err(error) = watcher::index_paths(&state.db, &id, &paths).await {
+            record_scan_error(&state.db, &id, &error.to_string()).await;
+            return Err(error.to_string());
+        }
         let _ = state.app_handle.emit("library:updated", ());
     }
     Ok(())
@@ -129,7 +243,10 @@ pub async fn refresh_all_libraries(
 
     for (id, root_paths_json) in rows {
         let paths: Vec<String> = serde_json::from_str(&root_paths_json).unwrap_or_default();
-        let _ = watcher::index_paths(&state.db, &id, &paths).await;
+        if let Err(error) = watcher::index_paths(&state.db, &id, &paths).await {
+            record_scan_error(&state.db, &id, &error.to_string()).await;
+            return Err(error.to_string());
+        }
     }
 
     let _ = state.app_handle.emit("library:updated", ());

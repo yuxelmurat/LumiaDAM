@@ -1,152 +1,210 @@
-# OpenDAM 🗂️✨
-
 <div align="center">
+  <img src="apps/desktop/public/brand/lumiadam-mark.png" width="148" alt="LumiaDAM logo" />
 
-![OpenDAM Banner](https://raw.githubusercontent.com/LawLaw09/OpenDAM/main/apps/desktop/src-tauri/icons/128x128.png)
+# LumiaDAM
 
-### The First Free & Open-Source Digital Asset Management (DAM) System for 3D, CAD, Architecture & Design
+**Find the right 3D asset without reorganizing your archive.**
 
-**A modern, local-first, high-performance alternative to Connecter, Eagle, and Adobe Bridge.**
+A local-first digital asset manager for large 3D, CAD, architecture, material, texture, and reference libraries on Windows, local disks, and NAS storage.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white)](https://github.com)
-[![Built with Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri&logoColor=white)](https://tauri.app)
-[![Rust](https://img.shields.io/badge/Backend-Rust_1.80+-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org)
-[![React](https://img.shields.io/badge/Frontend-React_18_+_TypeScript-61DAFB?logo=react&logoColor=black)](https://react.dev)
-[![Three.js](https://img.shields.io/badge/3D_Viewport-Three.js-000000?logo=threedotjs&logoColor=white)](https://threejs.org)
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows11&logoColor=white)](https://github.com/yuxelmurat/LumiaDAM)
+[![CI](https://github.com/yuxelmurat/LumiaDAM/actions/workflows/ci.yml/badge.svg)](https://github.com/yuxelmurat/LumiaDAM/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)](LICENSE)
+[![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)](https://tauri.app/)
+[![Rust](https://img.shields.io/badge/Backend-Rust-DEA584?logo=rust&logoColor=black)](https://www.rust-lang.org/)
+[![React](https://img.shields.io/badge/UI-React%20%2B%20TypeScript-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 
-[**Download Latest Release (.exe)**](#-download--installation) • [**Features**](#-features) • [**NAS & Team Workflow**](#-network-and-nas-architecture) • [**Build from Source**](#-build-from-source)
-
-<br/><br/>
-
-[![OpenDAM User Interface](docs/images/opendam-ui.jpg)](https://github.com/LawLaw09/OpenDAM)
-
+[Features](#what-lumiadam-does) · [Workflow](#from-archive-to-edit) · [Build](#build-from-source) · [Roadmap](#roadmap) · [Support](#support-lumiadam)
 </div>
 
 ---
 
-## 🌟 Why OpenDAM?
+## Your archive already has structure. LumiaDAM makes it searchable.
 
-Proprietary asset managers force creative studios and 3D artists into expensive per-seat subscriptions, centralized cloud lock-in, or brittle network databases that corrupt over local file shares.
+Production libraries rarely arrive with clean metadata. They arrive as years of nested folders, purchased model packs, renderer variants, ZIP archives, numeric filenames, and preview renders:
 
-**OpenDAM is different:**
-- **100% Free & Open Source (MIT)**: Zero per-seat fees, zero subscription costs.
-- **Local-First & Private**: Your files and databases never leave your machine or private office network. Zero telemetry, zero cloud tracking.
-- **Built for Teams & NAS**: Each library maintains its own self-contained database (`.opendam/library.sqlite`) directly inside the shared folder. Anyone who mounts the directory gets immediate access to the shared previews, tags, and collections without server setup.
-- **Engineered for Speed**: SQLite FTS5 instant full-text search, in-memory directory caching, and batch commits that protect NAS hardware from I/O exhaustion.
+```text
+A:/Model Archive/2025/Living Room/3dsky/Corona/2542154.zip
+A:/Model Archive/2025/Living Room/3dsky/Corona/2542154.jpg
+```
 
----
+LumiaDAM indexes that structure into a local SQLite catalog. A search for `living corona` can find the asset through its full path even when the file itself is named `2542154.zip`. Browsing and filtering query the catalog instead of repeatedly walking the NAS.
 
-## 🚀 Features
+## What LumiaDAM does
 
-### 🎨 Visual-First Browsing (Never Blank Icons)
-- **Supported 3D/CAD Formats**: `.max`, `.rvt`, `.rfa`, `.dwg`, `.dxf`, `.skp`, `.blend`, `.c4d`, `.3dm`, `.obj`, `.fbx`, `.3ds`, `.dae`, `.gltf`, `.glb`, `.stl`, and more.
-- **Materials & Textures**: `.mat`, `.vrmat`, `.sbsar`, `.jpg`, `.png`, `.tga`, `.tif`, `.exr`, `.hdr`, `.ies`.
-- **Spacebar Quick Look**: Press and hold `Spacebar` on any selected asset for an instant, enlarged high-definition preview overlay.
-- **Interactive 3D Viewport**: Orbit, pan, and inspect 3D geometry in real-time powered by Three.js.
-- **One-Click Path Copying**: Select an asset and hit `Ctrl + C` to instantly copy its full, absolute file path to your clipboard.
+|     | Capability                      | What it means in practice                                                                                                                                                   |
+| --- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🔎  | **Path-aware search**           | Search filenames, tags, and every folder segment. Multiple words can match different parts of the path.                                                                     |
+| 📁  | **Browsable folder results**    | Files and folders have separate tabs and counts. Open a matching folder, move up one level, or return to the previous result set.                                           |
+| ⚡  | **Local library catalogs**      | Databases and generated previews live under LumiaDAM's local data directory or a storage location you choose, keeping catalog writes away from the source NAS.              |
+| 🧭  | **All Libraries by default**    | Newly added drives and folders use their real root name and appear immediately in the combined library view.                                                                |
+| 🖼️  | **Visual previews**             | Standard images plus native HDR and EXR thumbnails. Supported 3D/CAD files can use embedded previews or the optional preview worker when available.                         |
+| 🔗  | **Related image matching**      | A model or archive can display a smaller sibling image such as `9.jpg` beside `9.zip`. Matching stays inside the same folder and avoids shared legacy thumbnail collisions. |
+| ✨  | **Built-in PhotoEditor**        | Open supported images in the bundled PhotoCraft editor without sending them to a web service. Exports become new cataloged assets beside the source file.                   |
+| 🏷️  | **Library organization**        | Tags, ratings, color labels, favorites, and nested collections help add structure without renaming source files.                                                            |
+| 👁️  | **Quick Look**                  | Hold `Space` for a larger preview and use `Ctrl+C` to copy the selected asset path.                                                                                         |
+| 📊  | **Visible background activity** | The status panel reports scan and preview progress, the last scan time, completed/remaining work, and a rescan action.                                                      |
 
-### 🏢 Network and NAS Architecture (Zero Stress on Storage)
-Network-attached storage (NAS) and office SMB shares have limited read/write capabilities. OpenDAM implements an ultra-efficient network protocol:
-- **In-Memory Traversal**: Startup scanning preloads file metadata in 1 single query. Unchanged files are verified in RAM in **0 microseconds with 0 database queries**, indexing 6,000+ assets in under 200 ms.
-- **Chunked Batch Transactions**: All database writes are committed in batches of 200 items, slashing network sync packets and SQLite lock contention by **over 98%**.
-- **Thumbnail Pre-Check**: Previews are rendered once into `.opendam/thumbs/`. OpenDAM pre-checks thumbnail existence on disk, completely eliminating redundant reads of 100MB+ CAD files across the network.
-- **RAM Temp Storage**: Temp sorting buffers, FTS5 scratchpads, and index buffers are kept in local RAM (`PRAGMA temp_store = MEMORY`), writing zero temporary files to your NAS.
-- **Portable Relative Paths**: Paths inside `.opendam/library.sqlite` are stored relative to the library root. Team members mounting the share on `Z:\`, `Y:\`, or `\\server\share` share the exact same database without broken links.
+### Catalog every file, preview what LumiaDAM understands
 
-### 🗂️ Professional Organization & Safety
-- **Hierarchical Collections & Sub-Collections**: Organize assets into nested collection trees with live recursive asset count rollups.
-- **Multi-Level Tagging & Color Labels**: Quickly categorize assets with color-coded labels, star ratings, and tags.
-- **Accidental-Deletion Safeguards**: High-value items (libraries, collections, tags) are protected by a confirmation dialog requiring you to type `confirm` before deletion.
-- **Revit Backup Auto-Filtering**: Automatic detection and suppression of Revit backup files (`*.0001.rfa`, `*.0002.rvt`) keeps your workspace clean.
-- **DCC Integration Ready**: Drag and drop assets directly into 3ds Max, Blender, Revit, SketchUp, and Unreal Engine.
+LumiaDAM does not hide an asset because its format has no thumbnail. Regular files, unknown extensions, extensionless files, and archives are cataloged and remain searchable. ZIP contents are not extracted or indexed automatically.
 
----
+Preview support varies by format:
 
-## 📦 Download & Installation
+- **Images:** JPG/JPEG, PNG, WebP, BMP, TIFF, GIF, TGA, HDR, and EXR.
+- **Editable in PhotoEditor:** JPG/JPEG, PNG, WebP, BMP, TIFF, and layered `.pcraft` projects.
+- **3D/CAD and design files:** formats such as MAX, RVT/RFA, DWG/DXF, SKP, BLEND, C4D, 3DM, OBJ, FBX, GLTF/GLB, STL, materials, and IES files are indexed. Preview availability depends on embedded data and installed preview tooling.
 
-### Windows (Recommended)
-1. Download the latest installer from the [Releases](https://github.com) page:
-   - **`OpenDAM_x64-setup.exe`** (Standard Windows Installer with Desktop & Start Menu shortcuts)
-   - **`opendam-desktop.exe`** (Portable standalone executable, no installation needed)
-2. Run the installer and launch **OpenDAM**.
-3. Click **"+"** under Libraries in the left sidebar, choose any folder with 3D or CAD files, and watch OpenDAM index your assets visually in seconds!
+Indexing a format does not imply full geometry parsing, renderer compatibility detection, or one-click import into a DCC application.
 
----
+## From archive to edit
 
-## 🛠️ Tech Stack
+```mermaid
+flowchart LR
+    A[Local disk or NAS library] --> B[Local SQLite catalog]
+    B --> C[Search full paths]
+    B --> D[Browse folders]
+    B --> E[Filter and organize]
+    C --> F[Quick Look or related preview]
+    D --> F
+    F --> G[PhotoEditor]
+    G --> H[New edited asset in the library]
+```
 
-| Layer | Technology |
-|---|---|
-| **Shell & Runtime** | [Tauri v2](https://tauri.app) (Rust + Native WebView) |
-| **Frontend** | [React 18](https://react.dev), [TypeScript](https://www.typescriptlang.org), [Vite](https://vitejs.dev) |
-| **Styling** | Vanilla CSS Modules |
-| **State Management** | [Zustand](https://github.com/pmndrs/zustand) |
-| **Database & Search** | SQLite + FTS5 full-text indexing via [SQLx](https://github.com/launchbadge/sqlx) |
-| **3D Rendering** | [Three.js](https://threejs.org) / [@react-three/fiber](https://github.com/pmndrs/react-three-fiber) |
-| **Preview Engine** | Python worker (Pillow, OpenImageIO, assimp, olefile, ezdxf, ffmpeg) |
+1. Add a drive or root folder as a library.
+2. LumiaDAM catalogs its files and builds previews while reporting progress.
+3. Search by filename, folder, year, room, vendor, or renderer name.
+4. Browse the matching folder or refine the result with type and metadata filters.
+5. Open an image in **PhotoEditor**, export a new version, and keep the original untouched.
 
----
+The application menu beside the LumiaDAM logo keeps **Libraries**, **PhotoEditor**, and **Settings** in one consistent place. Switching back to Libraries does not discard the current editor session.
 
-## 💻 Build from Source
+## Storage designed for real archives
 
-### Prerequisites
-- [Node.js 20+](https://nodejs.org) and [pnpm 9+](https://pnpm.io)
-- [Rust 1.80+](https://www.rust-lang.org)
-- Python 3.10+ (for preview engine workers)
+By default, LumiaDAM stores its catalogs and thumbnails under:
 
-### Development Setup
+```text
+%LOCALAPPDATA%/LumiaDAM/
+  data/                              # app settings and library list
+  libraries/
+    Library_Name--<unique-id>/
+      library.sqlite
+      thumbs/
+```
 
-```bash
-# Clone the repository
-git clone https://github.com/LawLaw09/OpenDAM.git
-cd opendam
+The source library remains free of new database and thumbnail folders. You can choose another catalog location in **Settings**, with a clear warning that a slow disk or network destination will also slow search and preview access. Existing catalogs continue to work when the NAS is offline; opening source files and generating missing previews still require the source to be reachable.
 
-# Install dependencies
-pnpm install
+[Read the storage and migration guide](docs/storage.md) · [Read the folder search guide](docs/folder-search.md)
 
-# Run desktop app in development mode (hot-reload)
+## PhotoEditor
+
+LumiaDAM packages a pinned build of [PhotoCraft](https://github.com/storytold/photocraft) as a local web editor inside the desktop application.
+
+- Images stay on the computer; the editor does not upload them to a hosted service.
+- Export writes a new `source_edited_<id>` file beside the original.
+- The new file is inserted into the catalog and queued for thumbnail generation without rescanning the entire library.
+- The original file is never overwritten by the LumiaDAM export bridge.
+- Failed saves remain visible and can be retried without sending duplicate exports.
+
+The integration currently supports one editor session and a 256 MB source/output limit. HDR, EXR, PSD, and HEIF editing are outside the verified editor scope even when LumiaDAM can preview some of those formats.
+
+[PhotoEditor usage, limits, and upstream update process](docs/PHOTOCRAFT.md)
+
+## Project status
+
+LumiaDAM is in active **v0.1.0 development**. The current codebase contains the Windows application, local catalog architecture, path-aware folder search, background status reporting, related previews, HDR/EXR thumbnails, and embedded PhotoEditor integration.
+
+There is no public signed installer release yet. The Releases page will become the download source after the first tested package is published. Until then, build LumiaDAM from source and evaluate it with backed-up sample libraries.
+
+## Build from source
+
+### Requirements
+
+- Windows 10 or 11
+- Node.js 20+
+- pnpm 9+
+- Rust stable with the MSVC toolchain
+- Visual Studio C++ Build Tools and Windows SDK
+- WebView2 Runtime
+- `wasm32-unknown-unknown` Rust target and Trunk 0.21.14 for PhotoEditor
+- Python 3.10+ and optional preview dependencies for the Python preview worker
+
+### Development
+
+```powershell
+git clone https://github.com/yuxelmurat/LumiaDAM.git
+cd LumiaDAM
+
+pnpm install --frozen-lockfile
+rustup target add wasm32-unknown-unknown
+cargo install trunk --version 0.21.14 --locked
+
 pnpm dev
 ```
 
-### Production Build
+### Checks and Windows package
 
-```bash
-# Build the production Vite bundle and Tauri executable
-pnpm --filter @opendam/desktop build
+```powershell
+pnpm --filter @lumiadam/desktop typecheck
+pnpm --filter @lumiadam/desktop test
+pnpm --filter @lumiadam/desktop vite:build
+pnpm build
 ```
-The compiled installer will be available at:
-`apps/desktop/src-tauri/target/release/bundle/nsis/OpenDAM_0.1.0_x64-setup.exe`
+
+Build artifacts are written under:
+
+```text
+apps/desktop/src-tauri/target/release/lumiadam-desktop.exe
+apps/desktop/src-tauri/target/release/bundle/
+```
+
+The NSIS installer target is configured, but clean-computer installer validation is still part of the roadmap.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the repository layout and development workflow.
+
+## Roadmap
+
+### Available now
+
+- [x] LumiaDAM application identity, Windows icons, installer naming, and navigation
+- [x] Local catalog and preview storage with configurable location
+- [x] Multi-library search backed by SQLite
+- [x] Full-path search and browsable folder results
+- [x] Separate Files and Folders views with counts
+- [x] Scan/preview activity panel and manual rescan
+- [x] Same-folder related preview matching
+- [x] Native HDR and EXR thumbnail generation
+- [x] Embedded local PhotoEditor with safe, non-destructive exports
+
+### Planned
+
+- [ ] Clean-computer installer validation and a public signed release
+- [ ] 3ds Max bridge for sending renders directly into a library
+- [ ] PhotoEditor handoff from DCC render workflows
+- [ ] Broader preview coverage and packaged Python preview dependencies
+- [ ] NAS/SMB performance benchmarks and multi-machine catalog strategy
+- [ ] Safer file operations and recovery-focused deletion behavior
+
+Features in the planned list are not implemented promises or release commitments.
+
+## Support LumiaDAM
+
+LumiaDAM is free and open source. If the project saves time in your asset workflow, you can support its continued development:
+
+<a href="https://buymeacoffee.com/yuxelmurat8"><img src="https://img.shields.io/badge/Buy_me_a_coffee-Support_LumiaDAM-FFDD00?logo=buymeacoffee&logoColor=000000" alt="Support LumiaDAM on Buy Me a Coffee" /></a>
+
+You can also help by testing with real-world libraries, documenting reproducible bugs, or contributing focused pull requests.
+
+## License and credits
+
+LumiaDAM is distributed under the [MIT License](LICENSE). The original copyright notice for OpenDAM Contributors remains in the license as required.
+
+LumiaDAM began from the MIT-licensed [OpenDAM](https://github.com/LawLaw09/OpenDAM) codebase and has since introduced its own product identity, local catalog storage model, archive-focused search and folder navigation, preview behavior, status interface, and PhotoEditor workflow.
+
+The embedded image editor is based on [PhotoCraft](https://github.com/storytold/photocraft), licensed under MIT OR Apache-2.0. Its license and attribution files are preserved in packaged builds.
 
 ---
 
-## 🗺️ Project Roadmap
-
-- [x] Per-Library Portable SQLite Architecture (`.opendam/library.sqlite`)
-- [x] Extreme NAS Efficiency (in-memory caching, 200-item batch transactions)
-- [x] Multi-format 3D & CAD Support (DWG, RVT, RFA, MAX, SKP, OBJ, FBX, BLEND)
-- [x] Spacebar High-Definition Quick Look Overlay
-- [x] Hierarchical Sub-Collections & Recursive Filtering
-- [x] Accidental-Deletion Protection Dialogs
-- [x] Revit Backup Auto-Suppression (`filename.####.rfa`)
-- [ ] DCC Bridge Plugins: 3ds Max, Blender, Revit, SketchUp, Cinema 4D
-- [ ] Headless Turnable & Video Turntable Rendering
-- [ ] Custom User Attributes & Metadata Schemas
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! OpenDAM is an open, community-driven project. If you'd like to report a bug, request a format, or contribute a feature:
-1. Fork the repo.
-2. Create a feature branch (`git checkout -b feature/amazing-feature`).
-3. Commit your changes (`git commit -m 'Add amazing feature'`).
-4. Push to the branch (`git push origin feature/amazing-feature`).
-5. Open a Pull Request.
-
----
-
-## 📄 License
-
-Distributed under the **MIT License**. See [`LICENSE`](./LICENSE) for more information.
-All binary files stay on your machine or network storage — you retain 100% ownership and control over your creative assets.
+<div align="center">
+  Built for artists, archivists, and studios whose folders are already the database.
+</div>

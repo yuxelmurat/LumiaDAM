@@ -1,20 +1,53 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useUIStore, useAssetStore, useLibraryStore } from '../../store';
 import { api } from '../../api';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   IconGrid, IconList, IconSearch, IconSidebar,
   IconPanel, IconRefresh, IconPlus,
+  IconMenu, IconFolder, IconImage, IconSettings,
 } from '../Icons';
 import styles from './Toolbar.module.css';
 import clsx from 'clsx';
+import { StorageSettings } from '../StorageSettings';
 
-export function Toolbar() {
+interface ToolbarProps {
+  workspace: 'library' | 'editor';
+  editorAssetName?: string;
+  onOpenLibraries: () => void;
+  onOpenPhotoEditor: () => void;
+}
+
+export function Toolbar({ workspace, editorAssetName, onOpenLibraries, onOpenPhotoEditor }: ToolbarProps) {
   const { viewMode, gridSize, sidebarOpen, detailPanelOpen,
           setViewMode, setGridSize, toggleSidebar, toggleDetailPanel } = useUIStore();
   const { query, setQuery, search, loading } = useAssetStore();
   const { addLibrary } = useLibraryStore();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [storageOpen, setStorageOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const closeWithEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    window.addEventListener('pointerdown', closeOutside);
+    window.addEventListener('keydown', closeWithEscape);
+    return () => {
+      window.removeEventListener('pointerdown', closeOutside);
+      window.removeEventListener('keydown', closeWithEscape);
+    };
+  }, [menuOpen]);
+
+  const choose = (action: () => void) => {
+    setMenuOpen(false);
+    action();
+  };
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -36,8 +69,7 @@ export function Toolbar() {
         title: 'Select Library Folder'
       });
       if (selectedPath && typeof selectedPath === 'string') {
-        const name = selectedPath.split(/[/\\]/).pop() || 'New Library';
-        await addLibrary(name, [selectedPath]);
+        await addLibrary([selectedPath]);
       }
     } catch (err) {
       console.error('Failed to add library:', err);
@@ -47,24 +79,45 @@ export function Toolbar() {
   const handleSearch = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setQuery({ text: e.target.value });
-      search();
+      search(e.target.value ? 250 : 0);
     },
     [setQuery, search]
   );
 
   return (
+    <>
     <header className={styles.toolbar} data-tauri-drag-region>
-      {/* App logo + name */}
-      <div className={styles.brand}>
-        <div className={styles.logo}>
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2L4 6v12l8 4 8-4V6L12 2Z" fill="hsl(220 85% 50%)" opacity="0.9"/>
-            <path d="M12 2v18M4 6l8 4 8-4" stroke="hsl(220 85% 70%)" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-        </div>
-        <span className={styles.appName}>OpenDAM</span>
+      {/* LumiaDAM amblemi ve adı */}
+      <div className={styles.brandMenu} ref={menuRef}>
+        <button
+          type="button"
+          className={styles.brandTrigger}
+          aria-label="Open LumiaDAM menu"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <img className={styles.logo} src="/brand/lumiadam-mark.png" alt="" />
+          <span className={styles.appName}>LumiaDAM</span>
+          <IconMenu size={17} className={styles.menuIcon} />
+        </button>
+        {menuOpen && (
+          <div className={styles.appMenu} role="menu" aria-label="LumiaDAM navigation">
+            <button type="button" role="menuitem" className={workspace === 'library' ? styles.menuItemActive : undefined} onClick={() => choose(onOpenLibraries)}>
+              <IconFolder size={17} /><span>Libraries</span>
+            </button>
+            <button type="button" role="menuitem" className={workspace === 'editor' ? styles.menuItemActive : undefined} onClick={() => choose(onOpenPhotoEditor)}>
+              <IconImage size={17} /><span>PhotoEditor</span>
+            </button>
+            <div className={styles.menuDivider} />
+            <button type="button" role="menuitem" onClick={() => choose(() => setStorageOpen(true))}>
+              <IconSettings size={17} /><span>Settings</span>
+            </button>
+          </div>
+        )}
       </div>
 
+      {workspace === 'library' ? <>
       {/* Search area with recursive subcollection filter toggle */}
       <div className={styles.searchContainer}>
         <label
@@ -104,11 +157,11 @@ export function Toolbar() {
           <input
             id="toolbar-search"
             type="search"
-            placeholder="Search assets, tags, metadata…"
+            placeholder="Search files and folders…"
             className={styles.searchInput}
             value={query.text}
             onChange={handleSearch}
-            aria-label="Search assets"
+            aria-label="Search files and folders"
           />
           {loading && <div className={clsx(styles.spinner, 'animate-spin')} />}
         </div>
@@ -193,6 +246,14 @@ export function Toolbar() {
           <span>Add Library</span>
         </button>
       </div>
+      </> : (
+        <div className={styles.editorTitle} title={editorAssetName}>
+          <IconImage size={15} />
+          <span>{editorAssetName || 'PhotoEditor'}</span>
+        </div>
+      )}
     </header>
+    {storageOpen && <StorageSettings onClose={() => setStorageOpen(false)} />}
+    </>
   );
 }

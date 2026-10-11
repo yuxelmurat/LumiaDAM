@@ -4,13 +4,26 @@ use sqlx::{Pool, Sqlite};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use tokio::sync::RwLock;
+
+/// Sondaki ayırıcıları yok sayar; sürücü kökünde harfi, ağ paylaşımında paylaşım adını kullanır.
+pub fn library_name(name: &str, root: &str) -> String {
+    if !name.trim().is_empty() && !name.eq_ignore_ascii_case("New Library") {
+        return name.to_string();
+    }
+    root.trim_end_matches(['/', '\\']).rsplit(['/', '\\']).next()
+        .filter(|part| !part.is_empty()).unwrap_or(root).to_string()
+}
 
 #[derive(Clone)]
 pub struct LibraryHandle {
     pub id: String,
     pub name: String,
     pub root_path: PathBuf,
+    pub catalog_dir: PathBuf,
+    pub scan_lock: Arc<tokio::sync::Mutex<()>>,
+    pub scan_processed: Arc<AtomicU64>,
     pub pool: Pool<Sqlite>,
 }
 
@@ -18,6 +31,9 @@ pub struct Database {
     pub master_pool: Pool<Sqlite>,
     pub libraries: Arc<RwLock<HashMap<String, LibraryHandle>>>,
     pub pool: Pool<Sqlite>,
+    pub storage_root: PathBuf,
+    pub default_storage_root: PathBuf,
+    pub storage_errors: Vec<String>,
 }
 
 /// Connect to a per-library SQLite database with NAS-safe settings.
@@ -81,35 +97,15 @@ pub async fn connect_library_sqlite(db_path: &Path) -> Result<Pool<Sqlite>> {
     .execute(&pool)
     .await;
 
-    // Purge any existing Revit backup files from database
-    if let Ok(assets) = sqlx::query_as::<_, (String, String)>(
-        "SELECT id, file_name FROM assets WHERE extension IN ('rfa', 'rvt')"
-    )
-    .fetch_all(&pool)
-    .await
-    {
-        let mut purged = false;
-        for (id, name) in assets {
-            if crate::watcher::is_revit_backup(&name) {
-                let _ = sqlx::query("DELETE FROM assets WHERE id = ?")
-                    .bind(&id)
-                    .execute(&pool)
-                    .await;
-                purged = true;
-            }
-        }
-        if purged {
-            let _ = sqlx::query("UPDATE libraries SET asset_count = (SELECT COUNT(*) FROM assets)")
-                .execute(&pool)
-                .await;
-        }
-    }
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_assets_path_nocase ON assets(file_path COLLATE NOCASE)")
+        .execute(&pool).await?;
 
+    crate::folders::initialize(&pool).await?;
     Ok(pool)
 }
 
 impl Database {
-    pub async fn new(master_db_url: &str) -> Result<Self> {
+    pub async fn new(master_db_url: &str, default_storage_root: PathBuf) -> Result<Self> {
         let master_path = Path::new(master_db_url);
         let master_options = SqliteConnectOptions::new()
             .filename(master_path)
@@ -139,6 +135,18 @@ impl Database {
         .execute(&master_pool)
         .await?;
 
+        let columns: Vec<(i64, String, String, i64, Option<String>, i64)> =
+            sqlx::query_as("PRAGMA table_info(libraries)").fetch_all(&master_pool).await?;
+        if !columns.iter().any(|c| c.1 == "catalog_path") {
+            sqlx::query("ALTER TABLE libraries ADD COLUMN catalog_path TEXT")
+                .execute(&master_pool).await?;
+        }
+        sqlx::query("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            .execute(&master_pool).await?;
+        let selected_root: Option<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'storage_root'")
+            .fetch_optional(&master_pool).await?;
+        let storage_root = selected_root.map(PathBuf::from).unwrap_or_else(|| default_storage_root.clone());
+
         // Also ensure library schema tables exist on master_pool as fallback
         let _ = sqlx::query(include_str!("../migrations/002_library_schema.sql"))
             .execute(&master_pool)
@@ -151,62 +159,29 @@ impl Database {
             .execute(&master_pool)
             .await;
 
-        let mut open_libraries = HashMap::new();
-        let mut first_pool: Option<Pool<Sqlite>> = None;
-
-        // Load all registered libraries and open their per-library SQLite pools
-        if let Ok(rows) = sqlx::query_as::<_, (String, String, String)>(
+        let mut db = Self {
+            pool: master_pool.clone(), master_pool,
+            libraries: Arc::new(RwLock::new(HashMap::new())),
+            storage_root, default_storage_root, storage_errors: Vec::new(),
+        };
+        let rows: Vec<(String, String, String)> = sqlx::query_as(
             "SELECT id, name, root_paths FROM libraries"
-        )
-        .fetch_all(&master_pool)
-        .await
-        {
-            for (id, name, root_paths_json) in rows {
-                let paths: Vec<String> = serde_json::from_str(&root_paths_json).unwrap_or_default();
-                if let Some(first_path) = paths.first() {
-                    let root_path = PathBuf::from(first_path);
-                    if root_path.exists() {
-                        let opendam_dir = root_path.join(".opendam");
-                        let thumbs_dir = opendam_dir.join("thumbs");
-                        let _ = tokio::fs::create_dir_all(&thumbs_dir).await;
-
-                        let lib_db_file = opendam_dir.join("library.sqlite");
-                        match connect_library_sqlite(&lib_db_file).await {
-                            Ok(lib_pool) => {
-                                if first_pool.is_none() {
-                                    first_pool = Some(lib_pool.clone());
-                                }
-                                open_libraries.insert(
-                                    id.clone(),
-                                    LibraryHandle {
-                                        id,
-                                        name,
-                                        root_path,
-                                        pool: lib_pool,
-                                    },
-                                );
-                            }
-                            Err(e) => {
-                                tracing::error!("Failed to open library DB at {:?}: {}", lib_db_file, e);
-                            }
-                        }
-                    }
+        ).fetch_all(&db.master_pool).await?;
+        for (id, name, paths) in rows {
+            let paths: Vec<String> = serde_json::from_str(&paths)?;
+            if let Some(root) = paths.first() {
+                let derived_name = library_name(&name, root);
+                if derived_name != name {
+                    sqlx::query("UPDATE libraries SET name = ? WHERE id = ?")
+                        .bind(&derived_name).bind(&id).execute(&db.master_pool).await?;
+                }
+                let name = derived_name;
+                if let Err(error) = db.register_library(&id, &name, Path::new(root)).await {
+                    let message = format!("{}: {:#}", name, error);
+                    tracing::error!("Cannot open catalog: {}", message);
+                    db.storage_errors.push(message);
                 }
             }
-        }
-
-        let fallback_pool = first_pool.unwrap_or_else(|| master_pool.clone());
-        let libraries = Arc::new(RwLock::new(open_libraries));
-
-        let db = Self {
-            master_pool,
-            libraries,
-            pool: fallback_pool,
-        };
-
-        // Sync metadata across all open libraries
-        for lib in db.get_all_libraries().await {
-            db.sync_library_metadata(&lib.pool).await;
         }
 
         Ok(db)
@@ -259,12 +234,28 @@ impl Database {
     }
 
     pub async fn register_library(&self, id: &str, name: &str, root_path: &Path) -> Result<LibraryHandle> {
-        let opendam_dir = root_path.join(".opendam");
-        let thumbs_dir = opendam_dir.join("thumbs");
-        tokio::fs::create_dir_all(&thumbs_dir).await?;
-
-        let lib_db_file = opendam_dir.join("library.sqlite");
+        let previous: Option<String> = sqlx::query_scalar(
+            "SELECT catalog_path FROM libraries WHERE id = ?"
+        ).bind(id).fetch_optional(&self.master_pool).await?.flatten();
+        let catalog_dir = if let Some(previous) = previous {
+            let previous = PathBuf::from(previous);
+            anyhow::ensure!(previous.join("library.sqlite").try_exists()?, "Saved catalog was not found; no empty catalog was created");
+            if previous.parent() == Some(self.storage_root.as_path()) {
+                previous
+            } else {
+                crate::storage::prepare_catalog(&self.storage_root, name, id, Some(&previous)).await?
+            }
+        } else {
+            // İlk aktarım için kaynak erişilebilir olmalı; sonraki açılışlar NAS'a bağlı değildir.
+            anyhow::ensure!(root_path.is_dir(), "Source folder is unavailable; connect it for the first transfer");
+            let legacy = root_path.join(".opendam");
+            let source = if legacy.join("library.sqlite").try_exists()? { Some(legacy.as_path()) } else { None };
+            crate::storage::prepare_catalog(&self.storage_root, name, id, source).await?
+        };
+        let lib_db_file = catalog_dir.join("library.sqlite");
         let lib_pool = connect_library_sqlite(&lib_db_file).await?;
+        sqlx::query("UPDATE libraries SET catalog_path = ? WHERE id = ?")
+            .bind(catalog_dir.to_string_lossy().as_ref()).bind(id).execute(&self.master_pool).await?;
 
         // Sync metadata immediately
         self.sync_library_metadata(&lib_pool).await;
@@ -273,6 +264,9 @@ impl Database {
             id: id.to_string(),
             name: name.to_string(),
             root_path: root_path.to_path_buf(),
+            catalog_dir,
+            scan_lock: Arc::new(tokio::sync::Mutex::new(())),
+            scan_processed: Arc::new(AtomicU64::new(0)),
             pool: lib_pool,
         };
 
@@ -291,9 +285,7 @@ impl Database {
     pub async fn get_library_handle(&self, id: Option<&str>) -> Option<LibraryHandle> {
         let libs = self.libraries.read().await;
         if let Some(target_id) = id {
-            if let Some(h) = libs.get(target_id) {
-                return Some(h.clone());
-            }
+            return libs.get(target_id).cloned();
         }
         libs.values().next().cloned()
     }
@@ -328,6 +320,13 @@ pub fn resolve_path(root: &Path, rel_or_abs: &str) -> String {
     } else {
         root.join(p).to_string_lossy().to_string()
     }
+}
+
+/// Eski ortak önbellekte aynı adlı dosyalar tek `thumbs/ad_thumb.jpg` yolunu paylaşır.
+pub fn is_legacy_thumbnail(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    normalized.rsplit_once('/')
+        .and_then(|(parent, _)| parent.rsplit('/').next()) == Some("thumbs")
 }
 
 /// Helper to convert an absolute path to a portable relative path for storage

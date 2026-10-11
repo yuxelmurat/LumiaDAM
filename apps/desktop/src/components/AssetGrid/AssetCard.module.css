@@ -74,6 +74,36 @@
   background: var(--color-bg-elevated);
 }
 
+.relatedImage {
+  position: absolute;
+  left: var(--space-2);
+  bottom: var(--space-2);
+  width: 74px;
+  padding: 3px;
+  border: 1px solid var(--color-brand-400);
+  border-radius: var(--radius-sm);
+  background: hsl(220 18% 9% / 0.94);
+  box-shadow: 0 2px 8px hsl(0 0% 0% / 0.5);
+  pointer-events: none;
+  z-index: 3;
+}
+.relatedImage img {
+  width: 100%;
+  height: 48px;
+  display: block;
+  object-fit: cover;
+}
+.relatedImage span {
+  display: block;
+  padding-top: 2px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-align: center;
+  color: var(--color-text-primary);
+  font-size: 8px;
+  line-height: 1.1;
+}
+
 /* Overlay badges */
 .previewBadge {
   position: absolute;
@@ -278,3 +308,5 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.filePath { font-size: 10px; color: var(--color-text-muted); overflow-wrap: anywhere; margin: 4px 0; }

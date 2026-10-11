@@ -7,15 +7,31 @@ use tokio::io::{AsyncWriteExt, AsyncBufReadExt, BufReader};
 use serde_json::json;
 use tauri::Emitter;
 use crate::AppState;
-use crate::db::{make_relative_path, resolve_path};
+use crate::db::resolve_path;
 
 pub const THUMB_SIZE: u32 = 512;
 
-/// Checks if an extension is a standard raster image that Rust can decode directly.
+/// Eski sürümde başarısız kalan HDR/EXR işlerini katalog başına yalnız bir kez yeniden dener.
+pub(crate) async fn retry_failed_hdr_previews(pool: &sqlx::SqlitePool) -> Result<()> {
+    let version: i64 = sqlx::query_scalar("PRAGMA user_version").fetch_one(pool).await?;
+    if version >= 1 { return Ok(()); }
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "UPDATE preview_jobs SET status = 'queued' WHERE status = 'error' AND asset_id IN (SELECT id FROM assets WHERE extension IN ('hdr', 'exr'))"
+    ).execute(&mut *tx).await?;
+    sqlx::query(
+        "UPDATE assets SET preview_status = 'pending' WHERE extension IN ('hdr', 'exr') AND id IN (SELECT asset_id FROM preview_jobs WHERE status = 'queued')"
+    ).execute(&mut *tx).await?;
+    sqlx::query("PRAGMA user_version = 1").execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Rust'ın ek Python modülü olmadan önizleyebildiği görüntü formatları.
 pub fn is_native_image(ext: &str) -> bool {
     matches!(
         ext.to_lowercase().as_str(),
-        "jpg" | "jpeg" | "png" | "bmp" | "gif" | "tif" | "tiff" | "tga" | "webp"
+        "jpg" | "jpeg" | "png" | "bmp" | "gif" | "tif" | "tiff" | "tga" | "webp" | "hdr" | "exr"
     )
 }
 
@@ -23,7 +39,6 @@ pub fn is_native_image(ext: &str) -> bool {
 /// Uses Triangle (bilinear) filtering for 4x–8x faster performance than Lanczos3.
 pub fn generate_image_thumb(source: &Path, output: &Path) -> Result<()> {
     let img = image::open(source)?;
-    let thumb = img.resize(THUMB_SIZE, THUMB_SIZE, FilterType::Triangle);
 
     if let Some(parent) = output.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -35,11 +50,36 @@ pub fn generate_image_thumb(source: &Path, output: &Path) -> Result<()> {
         .map(|s| s.eq_ignore_ascii_case("jpg") || s.eq_ignore_ascii_case("jpeg"))
         .unwrap_or(false);
 
-    if is_jpg {
-        let rgb = thumb.to_rgb8();
-        rgb.save_with_format(output, image::ImageFormat::Jpeg)?;
+    let is_hdr = source.extension().and_then(|s| s.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("hdr") || ext.eq_ignore_ascii_case("exr"));
+
+    if is_hdr {
+        // WebView HDR/EXR dosyasını doğrudan gösteremez; kayan nokta renkleri SDR'ye eşle.
+        // Kırpmayı önlemek için ton eşlemesi kayan nokta görüntü küçültülmeden yapılır.
+        let mut linear = match img {
+            image::DynamicImage::ImageRgb32F(buffer) => buffer,
+            other => other.to_rgb32f(),
+        };
+        for pixel in linear.pixels_mut() {
+            for channel in &mut pixel.0 {
+                let value = if channel.is_finite() { channel.max(0.0) } else { 0.0 };
+                *channel = (value / (1.0 + value)).powf(1.0 / 2.2);
+            }
+        }
+        let thumb = image::DynamicImage::ImageRgb32F(linear)
+            .resize(THUMB_SIZE, THUMB_SIZE, FilterType::Triangle).to_rgb32f();
+        let mapped = image::RgbImage::from_fn(thumb.width(), thumb.height(), |x, y| {
+            let [r, g, b] = thumb.get_pixel(x, y).0;
+            image::Rgb([(r * 255.0).round() as u8, (g * 255.0).round() as u8, (b * 255.0).round() as u8])
+        });
+        mapped.save_with_format(output, image::ImageFormat::Jpeg)?;
     } else {
-        thumb.save(output)?;
+        let thumb = img.resize(THUMB_SIZE, THUMB_SIZE, FilterType::Triangle);
+        if is_jpg {
+            thumb.to_rgb8().save_with_format(output, image::ImageFormat::Jpeg)?;
+        } else {
+            thumb.save(output)?;
+        }
     }
     Ok(())
 }
@@ -174,13 +214,7 @@ pub fn start_preview_worker(state: Arc<AppState>) {
 
         tracing::info!("Preview worker using Python: {:?}, Script: {:?}", py_exec, worker_py);
 
-        // Crash-recovery: Reset any orphaned jobs left in 'processing' ONCE at startup
-        for lib in state.db.get_all_libraries().await {
-            let _ = sqlx::query("UPDATE preview_jobs SET status = 'queued' WHERE status = 'processing'")
-                .execute(&lib.pool)
-                .await;
-        }
-
+        let mut prepared_libraries = std::collections::HashSet::new();
         let mut py_worker: Option<PythonWorker> = None;
 
         loop {
@@ -194,8 +228,16 @@ pub fn start_preview_worker(state: Arc<AppState>) {
 
             for lib in libs {
                 let pool = &lib.pool;
+                if prepared_libraries.insert(lib.id.clone()) {
+                    // Uygulama açıldıktan sonra eklenen katalogları da bir kez hazırla.
+                    let _ = sqlx::query("UPDATE preview_jobs SET status = 'queued' WHERE status = 'processing'")
+                        .execute(pool).await;
+                    if let Err(error) = retry_failed_hdr_previews(pool).await {
+                        tracing::error!("HDR/EXR preview retry migration failed: {error}");
+                    }
+                }
                 let root_path = &lib.root_path;
-                let thumb_dir = root_path.join(".opendam").join("thumbs");
+                let thumb_dir = lib.catalog_dir.join("thumbs");
                 let _ = tokio::fs::create_dir_all(&thumb_dir).await;
 
                 // Poll batch of up to 10 jobs to minimize SQLite round-trip overhead
@@ -232,14 +274,15 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                         .unwrap_or("")
                         .to_lowercase();
 
-                    // Check if thumbnail already exists on disk
-                    let thumb_png = thumb_dir.join(format!("{}_thumb.png", file_stem));
-                    let thumb_jpg = thumb_dir.join(format!("{}_thumb.jpg", file_stem));
+                    // Her varlığın önizleme dosyaları kendi klasöründe yer alır.
+                    let asset_thumb_dir = thumb_dir.join(&asset_id);
+                    let thumb_png = asset_thumb_dir.join(format!("{}_thumb.png", file_stem));
+                    let thumb_jpg = asset_thumb_dir.join(format!("{}_thumb.jpg", file_stem));
 
                     let existing_thumb = if thumb_png.exists() {
-                        Some(format!(".opendam/thumbs/{}_thumb.png", file_stem))
+                        Some(thumb_png.to_string_lossy().to_string())
                     } else if thumb_jpg.exists() {
-                        Some(format!(".opendam/thumbs/{}_thumb.jpg", file_stem))
+                        Some(thumb_jpg.to_string_lossy().to_string())
                     } else {
                         None
                     };
@@ -271,8 +314,8 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                         } else {
                             format!("{}_thumb.jpg", file_stem)
                         };
-                        let thumb_dest = thumb_dir.join(&thumb_file_name);
-                        let rel_thumb = format!(".opendam/thumbs/{}", thumb_file_name);
+                        let thumb_dest = asset_thumb_dir.join(&thumb_file_name);
+                        let rel_thumb = thumb_dest.to_string_lossy().to_string();
 
                         match generate_image_thumb(&full_source, &thumb_dest) {
                             Ok(()) => {
@@ -314,7 +357,7 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                         "method": "model_meta",
                         "params": {
                             "source": full_source.to_string_lossy().to_string(),
-                            "output_dir": thumb_dir.to_string_lossy().to_string()
+                            "output_dir": asset_thumb_dir.to_string_lossy().to_string()
                         }
                     });
 
@@ -368,17 +411,15 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                             .await;
 
                         let thumb_to_save_abs = result_thumb.clone().or_else(|| result_model.clone());
-                        let rel_thumb = thumb_to_save_abs.as_ref().map(|abs| {
-                            make_relative_path(root_path, Path::new(abs))
-                        });
+                        // Kaynak tüm sürücü olsa da önizleme yolu kaynak köküne göre kısaltılmaz.
+                        let rel_thumb = thumb_to_save_abs;
 
                         if let Some(ref model_path) = result_model {
-                            let rel_model = make_relative_path(root_path, Path::new(model_path));
                             let _ = sqlx::query(
                                 "UPDATE assets SET preview_status = 'done', thumbnail_path = ?, metadata = json_set(coalesce(nullif(metadata, ''), '{}'), '$.preview_model', ?) WHERE id = ?"
                             )
                             .bind(&rel_thumb)
-                            .bind(&rel_model)
+                            .bind(model_path)
                             .bind(&asset_id)
                             .execute(pool)
                             .await;
@@ -427,4 +468,29 @@ pub fn start_preview_worker(state: Arc<AppState>) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod image_tests {
+    use super::*;
+
+    #[test]
+    fn hdr_and_exr_generate_tone_mapped_jpeg_without_python() {
+        let dir = std::env::temp_dir().join(format!("lumiadam-hdr-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pixels = image::ImageBuffer::from_pixel(2, 2, image::Rgb([4.0_f32, 1.0, 0.25]));
+        let original = image::DynamicImage::ImageRgb32F(pixels);
+
+        for (extension, format) in [("hdr", image::ImageFormat::Hdr), ("exr", image::ImageFormat::OpenExr)] {
+            let source = dir.join(format!("sample.{extension}"));
+            let output = dir.join(format!("{extension}_thumb.jpg"));
+            original.save_with_format(&source, format).unwrap();
+            assert!(is_native_image(extension));
+            generate_image_thumb(&source, &output).unwrap();
+            let result = image::open(&output).unwrap().to_rgb8();
+            let [red, green, blue] = result.get_pixel(0, 0).0;
+            assert!(red > green && green > blue && blue > 0, "{extension}: {red}, {green}, {blue}");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

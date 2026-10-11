@@ -1,115 +1,13 @@
 use anyhow::Result;
 use chrono::Utc;
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
-use std::time::{Duration, UNIX_EPOCH};
+use std::path::Path;
+use std::sync::atomic::Ordering;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::db::{make_relative_path, Database};
+use crate::db::{make_relative_path, is_legacy_thumbnail, Database};
 use crate::models::AssetKind;
-
-// ── Advisory lock guard ─────────────────────────────────────────────────────
-
-/// RAII guard: writes `.opendam/index.lock` on creation, removes it on drop.
-/// On NAS, multiple machines may attempt to re-index simultaneously on startup.
-/// The second machine detects the lock and skips indexing, preventing interleaved
-/// batch writes that would corrupt the asset catalogue.
-struct IndexLock(PathBuf);
-
-impl IndexLock {
-    /// Try to acquire the lock.
-    ///
-    /// Returns `None` if another instance acquired the lock within the last
-    /// `stale_after` seconds (default: 120s). Returns `Some(guard)` on success.
-    fn try_acquire(opendam_dir: &Path, stale_after: u64) -> Option<Self> {
-        let lock_path = opendam_dir.join("index.lock");
-
-        // If the lock file exists and is recent, another indexer is running.
-        if let Ok(meta) = std::fs::metadata(&lock_path) {
-            if let Ok(modified) = meta.modified() {
-                let age = modified
-                    .duration_since(UNIX_EPOCH)
-                    .map(|t| {
-                        let now = std::time::SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs();
-                        now.saturating_sub(t.as_secs())
-                    })
-                    .unwrap_or(u64::MAX);
-                if age < stale_after {
-                    tracing::info!(
-                        "index.lock is {}s old — another machine is indexing, skipping.",
-                        age
-                    );
-                    return None;
-                }
-            }
-        }
-
-        // Write current Unix timestamp into the lock file.
-        let ts = std::time::SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or(Duration::ZERO)
-            .as_secs()
-            .to_string();
-
-        if let Err(e) = std::fs::write(&lock_path, &ts) {
-            // Couldn't write — NAS may be read-only. Log and proceed anyway
-            // (best-effort: don't block indexing just because we can't lock).
-            tracing::warn!("Could not write index.lock at {:?}: {} — proceeding without lock", lock_path, e);
-        }
-
-        Some(IndexLock(lock_path))
-    }
-}
-
-impl Drop for IndexLock {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
-    }
-}
-
-// Supported extensions
-const SUPPORTED_EXTENSIONS: &[&str] = &[
-    // 3D & CAD
-    "fbx", "obj", "3ds", "dae", "gltf", "glb", "skp", "blend",
-    "c4d", "3dm", "rfa", "rvt", "dwg", "dxf", "stl", "usd", "usdz", "max",
-    "abc", "ply", "x3d", "wrl",
-    // Materials
-    "mat", "vrmat", "sbsar", "sbs", "mdl",
-    // Textures
-    "jpg", "jpeg", "png", "tga", "tif", "tiff", "bmp", "dds",
-    "ktx", "ktx2", "webp", "avif",
-    // HDRI/HDR
-    "hdr", "exr", "hdri",
-    // IES
-    "ies", "ldt",
-    // Video
-    "mp4", "mov", "avi", "mkv", "webm", "m4v",
-    // Image layered
-    "psd", "psb", "ai", "svg", "gif",
-    // Docs
-    "pdf", "txt", "md",
-];
-
-pub fn is_supported(ext: &str) -> bool {
-    SUPPORTED_EXTENSIONS.contains(&ext.to_lowercase().as_str())
-}
-
-/// Check whether a file is an Autodesk Revit backup file (e.g. `filename.0001.rfa` or `filename.0002.rvt`).
-pub fn is_revit_backup(file_name: &str) -> bool {
-    let lower = file_name.to_lowercase();
-    if lower.ends_with(".rfa") || lower.ends_with(".rvt") {
-        if let Some((stem, _ext)) = lower.rsplit_once('.') {
-            if let Some((_base, suffix)) = stem.rsplit_once('.') {
-                return (3..=5).contains(&suffix.len()) && suffix.chars().all(|c| c.is_ascii_digit());
-            }
-        }
-    }
-    false
-}
 
 struct PendingAsset {
     id: String,
@@ -126,32 +24,22 @@ struct PendingAsset {
     is_update: bool,
 }
 
-/// Walk `paths` and index all found files as Assets into the database.
-/// Highly optimized for NAS:
-/// 1. Single initial query loads existing assets into RAM (0 queries during walk).
-/// 2. Skips `.opendam` directory.
-/// 3. Pre-checks `.opendam/thumbs/` to never re-render existing previews across network.
-/// 4. Groups writes into chunks of 200 inside single transactions (cutting NAS I/O by 99%).
-/// 5. Advisory index.lock prevents two machines from indexing the same library simultaneously.
+/// Kaynak dosyaları okuyup yerel kataloğu günceller; kaynakta veri veya kilit oluşturmaz.
 pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> Result<()> {
-    let handle_opt = db.get_library_handle(Some(library_id)).await;
-    let (pool, root_path) = match handle_opt {
-        Some(h) => (h.pool, h.root_path),
-        None => {
-            let p = PathBuf::from(paths.first().map(|s| s.as_str()).unwrap_or("."));
-            (db.pool.clone(), p)
-        }
-    };
-
-    // ── Advisory lock: skip if another machine is already indexing ────────
-    let opendam_dir = root_path.join(".opendam");
-    let _lock = match IndexLock::try_acquire(&opendam_dir, 120) {
-        Some(guard) => guard,
-        None => return Ok(()), // another instance is indexing — yield
-    };
-
-
-    let thumbs_dir = root_path.join(".opendam").join("thumbs");
+    let handle = db.get_library_handle(Some(library_id)).await
+        .ok_or_else(|| anyhow::anyhow!("Library catalog is not open"))?;
+    let _scan = handle.scan_lock.lock().await;
+    handle.scan_processed.store(0, Ordering::Relaxed);
+    sqlx::query("DELETE FROM settings WHERE key = ?")
+        .bind(format!("scan_error:{library_id}"))
+        .execute(&db.master_pool).await?;
+    let pool = handle.pool;
+    let root_path = handle.root_path;
+    let thumbs_dir = handle.catalog_dir.join("thumbs");
+    anyhow::ensure!(!paths.is_empty(), "No source folders to scan");
+    for root in paths {
+        anyhow::ensure!(Path::new(root).is_dir(), "Source is unavailable; the catalog is preserved: {}", root);
+    }
     let now = Utc::now().timestamp_millis();
 
     // ── 1. Load existing assets in ONE single query into memory ──────────
@@ -159,8 +47,7 @@ pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> R
         "SELECT id, file_path, modified_at, size_bytes, thumbnail_path FROM assets"
     )
     .fetch_all(&pool)
-    .await
-    .unwrap_or_default();
+    .await?;
 
     let mut existing_map: HashMap<String, (String, i64, i64, Option<String>)> = HashMap::with_capacity(existing_rows.len());
     for (id, file_path, modified_at, size_bytes, thumb) in existing_rows {
@@ -170,7 +57,12 @@ pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> R
     }
 
     let mut seen_paths: HashSet<String> = HashSet::with_capacity(existing_map.len() + 100);
+    let mut seen_folders = HashSet::new();
     let mut pending_batch: Vec<PendingAsset> = Vec::with_capacity(200);
+    // Tüm dosya türleri görünür; uygulamanın kendi ana veritabanı yine kaynak sayılmaz.
+    let master_path = db.master_pool.connect_options().get_filename().to_string_lossy().into_owned();
+    let internal_files: Vec<_> = ["", "-journal", "-wal", "-shm"].iter()
+        .map(|suffix| std::path::PathBuf::from(format!("{master_path}{suffix}"))).collect();
 
     // ── 2. Walk directory tree ──────────────────────────────────────────
     for root in paths {
@@ -179,15 +71,28 @@ pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> R
             .follow_links(true)
             .into_iter()
             .filter_entry(|e| {
-                // Skip hidden folders and .opendam internal folder
+                // Yalnız uygulamanın katalog klasörlerini tarama dışında tut.
+                if crate::storage::path_is_within(e.path(), &db.storage_root)
+                    || internal_files.iter().any(|path| crate::storage::path_is_within(e.path(), path))
+                    || crate::storage::path_is_within(e.path(), &db.default_storage_root)
+                    || (e.file_type().is_dir() && e.path().join(".lumiadam-catalog").exists()) {
+                    return false;
+                }
                 let file_name = e.file_name().to_string_lossy();
-                if e.file_type().is_dir() && file_name.starts_with('.') {
+                if e.file_type().is_dir() && file_name == ".opendam" {
                     return false;
                 }
                 true
             });
 
-        for entry in walker.filter_map(|e| e.ok()).filter(|e| e.file_type().is_file()) {
+        for entry in walker {
+            // Eksik/başarısız tarama silme aşamasına ulaşmamalı.
+            let entry = entry?;
+            if entry.file_type().is_dir() {
+                seen_folders.insert(make_relative_path(&root_path, entry.path()));
+            }
+            if !entry.file_type().is_file() { continue; }
+            handle.scan_processed.fetch_add(1, Ordering::Relaxed);
             let path = entry.path();
             let ext = path
                 .extension()
@@ -195,28 +100,16 @@ pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> R
                 .unwrap_or("")
                 .to_lowercase();
 
-            if !is_supported(&ext) {
-                continue;
-            }
-
             let file_name = path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("")
                 .to_string();
 
-            // Skip Revit backup files (e.g. name.0001.rfa, name.0002.rvt)
-            if is_revit_backup(&file_name) {
-                continue;
-            }
-
             let rel_path = make_relative_path(&root_path, path);
             seen_paths.insert(rel_path.clone());
 
-            let meta = match entry.metadata() {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
+            let meta = entry.metadata()?;
             let size_bytes = meta.len() as i64;
             let modified_at = meta
                 .modified()
@@ -235,43 +128,45 @@ pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> R
             let kind = AssetKind::from_extension(&ext);
             let kind_str = kind.as_str();
 
-            // Pre-check if thumbnail already exists in .opendam/thumbs/
-            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or(&file_name);
-            let thumb_png = thumbs_dir.join(format!("{}_thumb.png", stem));
-            let thumb_jpg = thumbs_dir.join(format!("{}_thumb.jpg", stem));
-
-            let mut preview_status = "none";
-            let mut thumbnail_path = None;
-            let mut needs_job = false;
-
-            if thumb_png.exists() {
-                preview_status = "done";
-                thumbnail_path = Some(format!(".opendam/thumbs/{}_thumb.png", stem));
-            } else if thumb_jpg.exists() {
-                preview_status = "done";
-                thumbnail_path = Some(format!(".opendam/thumbs/{}_thumb.jpg", stem));
-            } else {
-                let needs_preview = matches!(
-                    ext.as_str(),
-                    "max" | "fbx" | "obj" | "gltf" | "glb" | "dae" | "stl" | "3ds" | "skp" | "rfa" | "rvt" | "dwg" | "3dm" | "vrmat" | "psd" | "psb" | "ai" | "exr" | "hdr"
-                    | "jpg" | "jpeg" | "png" | "tif" | "tiff" | "tga" | "bmp" | "webp"
-                );
-                if needs_preview {
-                    preview_status = "pending";
-                    needs_job = true;
-                }
-            }
-
-            let (id, is_update) = if let Some((existing_id, _, _, existing_thumb)) = existing_map.get(&rel_path) {
-                if thumbnail_path.is_none() && existing_thumb.is_some() {
-                    thumbnail_path = existing_thumb.clone();
-                    preview_status = "done";
-                    needs_job = false;
-                }
+            let (id, is_update) = if let Some((existing_id, _, _, _)) = existing_map.get(&rel_path) {
                 (existing_id.clone(), true)
             } else {
                 (Uuid::new_v4().to_string(), false)
             };
+
+            // Aynı adlı dosyaların önizlemeleri ayrı klasörlerde tutulur.
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or(&file_name);
+            let asset_thumbs_dir = thumbs_dir.join(&id);
+            let thumb_png = asset_thumbs_dir.join(format!("{}_thumb.png", stem));
+            let thumb_jpg = asset_thumbs_dir.join(format!("{}_thumb.jpg", stem));
+
+            let mut preview_status = "none";
+            let mut thumbnail_path = None;
+            let mut needs_job = false;
+            let needs_preview = matches!(
+                ext.as_str(),
+                "max" | "fbx" | "obj" | "gltf" | "glb" | "dae" | "stl" | "3ds" | "skp" | "rfa" | "rvt" | "dwg" | "3dm" | "vrmat" | "psd" | "psb" | "ai" | "exr" | "hdr"
+                | "jpg" | "jpeg" | "png" | "tif" | "tiff" | "tga" | "bmp" | "webp"
+            );
+
+            if needs_preview && thumb_png.exists() {
+                preview_status = "done";
+                thumbnail_path = Some(thumb_png.to_string_lossy().to_string());
+            } else if needs_preview && thumb_jpg.exists() {
+                preview_status = "done";
+                thumbnail_path = Some(thumb_jpg.to_string_lossy().to_string());
+            } else if needs_preview {
+                preview_status = "pending";
+                needs_job = true;
+            }
+
+            if let Some((_, _, _, existing_thumb)) = existing_map.get(&rel_path) {
+                if thumbnail_path.is_none() && existing_thumb.as_ref().is_some_and(|path| !is_legacy_thumbnail(path)) {
+                    thumbnail_path = existing_thumb.clone();
+                    preview_status = "done";
+                    needs_job = false;
+                }
+            }
 
             pending_batch.push(PendingAsset {
                 id,
@@ -301,6 +196,8 @@ pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> R
         commit_asset_batch(&pool, &pending_batch).await?;
         pending_batch.clear();
     }
+
+    crate::folders::replace(&pool, &seen_folders).await?;
 
     // ── 3. Detect and remove deleted files in batch ───────────────────────
     let to_delete: Vec<String> = existing_map
@@ -336,6 +233,12 @@ pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> R
         .bind(library_id)
         .execute(&db.master_pool)
         .await;
+
+    sqlx::query("INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .bind(format!("last_scan:{library_id}"))
+        .bind(Utc::now().timestamp_millis().to_string())
+        .execute(&db.master_pool)
+        .await?;
 
     tracing::info!("NAS-efficient indexing complete for library {}: {} total assets", library_id, total_count);
     Ok(())

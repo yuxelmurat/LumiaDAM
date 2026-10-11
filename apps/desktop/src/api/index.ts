@@ -11,11 +11,36 @@ import type {
 } from '../types';
 
 /** Thin wrapper around Tauri IPC commands */
+export interface StorageSettings {
+  activePath: string;
+  selectedPath: string;
+  defaultPath: string;
+  restartRequired: boolean;
+  errors: string[];
+}
+
+export interface LibraryWorkStatus {
+  id: string;
+  name: string;
+  scanning: boolean;
+  scannedFiles: number;
+  estimatedRemaining: number | null;
+  lastScanAt: number | null;
+  lastError: string | null;
+  previewTotal: number;
+  previewCompleted: number;
+  previewPending: number;
+  previewFailed: number;
+}
+
 export const api = {
+  getStorageSettings: () => invoke<StorageSettings>('get_storage_settings'),
+  setStorageLocation: (path: string) => invoke<StorageSettings>('set_storage_location', { path }),
   // Libraries
   addLibrary: (payload: AddLibraryPayload) =>
     invoke<Library>('add_library', { payload }),
   listLibraries: () => invoke<Library[]>('list_libraries'),
+  getLibraryWorkStatus: () => invoke<LibraryWorkStatus[]>('get_library_work_status'),
   removeLibrary: (id: string) => invoke<void>('remove_library', { id }),
   refreshLibrary: (id: string) => invoke<void>('refresh_library', { id }),
   refreshAllLibraries: () => invoke<void>('refresh_all_libraries'),

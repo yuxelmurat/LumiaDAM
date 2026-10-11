@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-OpenDAM is a local-first digital asset manager. We need a desktop app framework that:
+LumiaDAM is a local-first digital asset manager. We need a desktop app framework that:
 - Works on Windows, macOS, Linux
 - Can access the local filesystem and run system processes
 - Has a modern, performant UI

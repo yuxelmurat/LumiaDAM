@@ -1,5 +1,5 @@
 name: 🐛 Bug Report
-description: Report an issue or bug with OpenDAM
+description: Report an issue or bug with LumiaDAM
 title: "[Bug]: "
 labels: ["bug"]
 body:
@@ -23,7 +23,7 @@ body:
       label: Steps to Reproduce
       description: Step-by-step instructions to reproduce the behavior.
       placeholder: |
-        1. Open OpenDAM
+        1. Open LumiaDAM
         2. Add a library containing format .xyz
         3. Click on ...
         4. See error

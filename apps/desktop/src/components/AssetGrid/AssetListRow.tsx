@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import type { Asset } from '../../types';
@@ -28,6 +28,8 @@ export const AssetListRow = memo(function AssetListRow({
   asset, selected, onClick,
 }: AssetListRowProps) {
   const patchAsset = useAssetStore((s) => s.patchAsset);
+  const [relatedSource, setRelatedSource] = useState<'thumb' | 'file' | 'error'>('thumb');
+  useEffect(() => setRelatedSource('thumb'), [asset.relatedImage?.filePath, asset.relatedImage?.thumbnailPath]);
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -92,6 +94,17 @@ export const AssetListRow = memo(function AssetListRow({
         )}
       </div>
 
+      {asset.relatedImage && relatedSource !== 'error' && (
+        <div className={styles.relatedImage} title={`Related image: ${asset.relatedImage.fileName}`}>
+          <img
+            src={convertFileSrc(relatedSource === 'thumb' && asset.relatedImage.thumbnailPath || asset.relatedImage.filePath)}
+            alt={`Related image: ${asset.relatedImage.fileName}`}
+            loading="lazy"
+            onError={() => setRelatedSource(relatedSource === 'thumb' && asset.relatedImage?.thumbnailPath ? 'file' : 'error')}
+          />
+        </div>
+      )}
+
       {/* Color label */}
       {asset.colorLabel !== 'none' && (
         <div
@@ -103,7 +116,7 @@ export const AssetListRow = memo(function AssetListRow({
       {/* Name */}
       <div className={styles.nameCol}>
         <span className={clsx(styles.name, 'truncate')}>{asset.fileName}</span>
-        <span className={clsx(styles.path, 'truncate')}>{asset.filePath}</span>
+        <span className={styles.path}>{asset.filePath}</span>
       </div>
 
       {/* Extension */}

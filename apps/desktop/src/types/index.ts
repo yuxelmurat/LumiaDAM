@@ -56,6 +56,8 @@ export interface Asset {
   collections?: string[]; // collection IDs
   /** Relative path to cached thumbnail (inside DAM cache dir) */
   thumbnailPath?: string;
+  /** Aynı klasördeki eşleşen görsel; dosyanın kendi önizlemesi değildir. */
+  relatedImage?: { filePath: string; fileName: string; thumbnailPath?: string };
   /** Whether a preview job is pending/running */
   previewStatus: 'none' | 'pending' | 'generating' | 'done' | 'error';
   metadata: AssetMeta;
@@ -108,6 +110,8 @@ export interface FilterSpec {
 }
 
 export interface SearchQuery {
+  folderPath?: string;
+  folderPage?: number;
   text: string;
   filter: FilterSpec;
   sort: { field: SortField; order: SortOrder };
@@ -139,7 +143,16 @@ export interface SearchPayload {
   pageSize: number;
 }
 
+export interface FolderResult {
+  libraryId: string;
+  path: string;
+  fullPath: string;
+  name: string;
+}
+
 export interface SearchResult {
+  folders: FolderResult[];
+  folderTotal: number;
   assets: Asset[];
   total: number;
   page: number;
