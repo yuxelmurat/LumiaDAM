@@ -30,30 +30,26 @@ pub struct LibraryWorkStatus {
 
 #[tauri::command]
 pub async fn get_library_work_status(state: State<'_, Arc<AppState>>) -> Result<Vec<LibraryWorkStatus>> {
+    let started = std::time::Instant::now();
     let libraries = state.db.get_all_libraries().await;
     let mut statuses = Vec::with_capacity(libraries.len());
     for library in libraries {
         let scanning = library.scan_lock.try_lock().is_err();
         let scanned_files = library.scan_processed.load(Ordering::Relaxed);
-        let previous_count: i64 = sqlx::query_scalar("SELECT asset_count FROM libraries WHERE id = ?")
-            .bind(&library.id).fetch_optional(&state.db.master_pool).await.map_err(|e| e.to_string())?
-            .unwrap_or(0);
-        let last_scan_at = sqlx::query_scalar::<_, String>("SELECT value FROM settings WHERE key = ?")
-            .bind(format!("last_scan:{}", library.id))
-            .fetch_optional(&state.db.master_pool).await.map_err(|e| e.to_string())?
-            .and_then(|value| value.parse::<i64>().ok());
-        let last_error = sqlx::query_scalar::<_, String>("SELECT value FROM settings WHERE key = ?")
-            .bind(format!("scan_error:{}", library.id))
-            .fetch_optional(&state.db.master_pool).await.map_err(|e| e.to_string())?;
+        let (previous_count, last_scan, last_error): (i64, Option<String>, Option<String>) = sqlx::query_as(
+            "SELECT asset_count, (SELECT value FROM settings WHERE key = ?), (SELECT value FROM settings WHERE key = ?) FROM libraries WHERE id = ?"
+        ).bind(format!("last_scan:{}", library.id)).bind(format!("scan_error:{}", library.id)).bind(&library.id)
+            .fetch_optional(&state.db.master_pool).await.map_err(|e| e.to_string())?.unwrap_or((0,None,None));
+        let last_scan_at = last_scan.and_then(|value| value.parse::<i64>().ok());
         let (preview_total, preview_completed, preview_pending, preview_failed): (i64, i64, i64, i64) =
-            sqlx::query_as("SELECT COUNT(*), COALESCE(SUM(status = 'done'), 0), COALESCE(SUM(status IN ('pending', 'queued', 'processing')), 0), COALESCE(SUM(status = 'error'), 0) FROM preview_jobs")
+            sqlx::query_as("SELECT total, completed, pending, failed FROM preview_summary")
                 .fetch_one(&library.pool).await.map_err(|e| e.to_string())?;
         statuses.push(LibraryWorkStatus {
             id: library.id,
             name: library.name,
             scanning,
             scanned_files,
-            estimated_remaining: (scanning && previous_count > 0)
+            estimated_remaining: (scanning && library.scan_full.load(Ordering::Relaxed) && previous_count > 0)
                 .then_some((previous_count as u64).saturating_sub(scanned_files)),
             last_scan_at,
             last_error,
@@ -63,6 +59,7 @@ pub async fn get_library_work_status(state: State<'_, Arc<AppState>>) -> Result<
             preview_failed,
         });
     }
+    tracing::debug!(elapsed_ms = started.elapsed().as_millis(), libraries = statuses.len(), "Library activity snapshot");
     Ok(statuses)
 }
 
@@ -155,6 +152,7 @@ pub async fn add_library(
     let paths = payload.root_paths.clone();
     let lib_id = id.clone();
     tokio::spawn(async move {
+        let _ = state_clone.app_handle.emit("library:activity", ());
         if let Err(e) = watcher::index_paths(&state_clone.db, &lib_id, &paths).await {
             tracing::error!("Failed to index library {}: {}", lib_id, e);
             record_scan_error(&state_clone.db, &lib_id, &e.to_string()).await;
@@ -221,8 +219,10 @@ pub async fn refresh_library(
 
     if let Some((root_paths_json,)) = row {
         let paths: Vec<String> = serde_json::from_str(&root_paths_json).unwrap_or_default();
+        let _ = state.app_handle.emit("library:activity", ());
         if let Err(error) = watcher::index_paths(&state.db, &id, &paths).await {
             record_scan_error(&state.db, &id, &error.to_string()).await;
+            let _ = state.app_handle.emit("library:activity", ());
             return Err(error.to_string());
         }
         let _ = state.app_handle.emit("library:updated", ());
@@ -243,8 +243,10 @@ pub async fn refresh_all_libraries(
 
     for (id, root_paths_json) in rows {
         let paths: Vec<String> = serde_json::from_str(&root_paths_json).unwrap_or_default();
+        let _ = state.app_handle.emit("library:activity", ());
         if let Err(error) = watcher::index_paths(&state.db, &id, &paths).await {
             record_scan_error(&state.db, &id, &error.to_string()).await;
+            let _ = state.app_handle.emit("library:activity", ());
             return Err(error.to_string());
         }
     }

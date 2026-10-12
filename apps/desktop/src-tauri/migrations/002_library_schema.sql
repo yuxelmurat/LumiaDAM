@@ -1,13 +1,5 @@
 -- OpenDAM Per-Library SQLite Schema (stored in <library_root>/.opendam/library.sqlite)
 
-PRAGMA journal_mode=DELETE;
-PRAGMA synchronous=NORMAL;
-PRAGMA temp_store=MEMORY;
-PRAGMA cache_size=-64000;
-PRAGMA busy_timeout=30000;  -- 30s for slow NAS writes
-PRAGMA foreign_keys=OFF;
-
--- ── Directory modification timestamps for smart incremental scans ────────
 CREATE TABLE IF NOT EXISTS dir_mtimes (
     dir_path  TEXT PRIMARY KEY,
     mtime     INTEGER NOT NULL

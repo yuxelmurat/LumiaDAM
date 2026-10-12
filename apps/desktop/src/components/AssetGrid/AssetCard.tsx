@@ -40,7 +40,7 @@ export const AssetCard = memo(function AssetCard({
   asset, selected, onClick,
 }: AssetCardProps) {
   const [imgError, setImgError] = useState(false);
-  const [relatedSource, setRelatedSource] = useState<'thumb' | 'file' | 'error'>('thumb');
+  const [relatedError, setRelatedError] = useState(false);
   const patchAsset = useAssetStore((s) => s.patchAsset);
 
   useEffect(() => {
@@ -48,7 +48,7 @@ export const AssetCard = memo(function AssetCard({
   }, [asset.thumbnailPath, asset.filePath]);
 
   useEffect(() => {
-    setRelatedSource('thumb');
+    setRelatedError(false);
   }, [asset.relatedImage?.filePath, asset.relatedImage?.thumbnailPath]);
 
   const KindIcon = KIND_ICON[asset.kind] ?? IconImage;
@@ -126,7 +126,8 @@ export const AssetCard = memo(function AssetCard({
       onKeyDown={(e) => e.key === 'Enter' && handleClick(e as unknown as React.MouseEvent)}
     >
       {/* Thumbnail / preview area */}
-      <div className={styles.thumb}>
+      <div className={styles.thumb} data-preview-id={!asset.thumbnailPath ? asset.id : undefined}
+        data-preview-key={`${asset.id}:${asset.modifiedAt}`}>
         {asset.thumbnailPath && !asset.thumbnailPath.endsWith('.glb') && !imgError ? (
           <img
             src={convertFileSrc(asset.thumbnailPath)}
@@ -135,33 +136,6 @@ export const AssetCard = memo(function AssetCard({
             loading="lazy"
             onError={() => setImgError(true)}
           />
-        ) : (['image', 'texture'].includes(asset.kind) && asset.filePath && !imgError) ? (
-          <img
-            src={convertFileSrc(asset.filePath)}
-            alt={asset.fileName}
-            className={styles.thumbImg}
-            loading="lazy"
-            onError={() => setImgError(true)}
-          />
-        ) : (asset.kind === 'video' && asset.filePath && !imgError) ? (
-          <div className={styles.videoThumbWrapper}>
-            <video
-              src={convertFileSrc(asset.filePath)}
-              preload="metadata"
-              muted
-              playsInline
-              className={styles.thumbVideo}
-              onLoadedMetadata={(e) => {
-                try {
-                  e.currentTarget.currentTime = 0.1;
-                } catch {}
-              }}
-              onError={() => setImgError(true)}
-            />
-            <div className={styles.videoPlayOverlay}>
-              <IconVideo size={13} />
-            </div>
-          </div>
         ) : (
           <div className={styles.thumbPlaceholder}>
             <KindIcon size={36} />
@@ -178,14 +152,16 @@ export const AssetCard = memo(function AssetCard({
           <div className={clsx(styles.previewBadge, styles.error)}>!</div>
         )}
 
-        {asset.relatedImage && relatedSource !== 'error' && (
-          <div className={styles.relatedImage} title={`Related image: ${asset.relatedImage.fileName}`}>
-            <img
-              src={convertFileSrc(relatedSource === 'thumb' && asset.relatedImage.thumbnailPath || asset.relatedImage.filePath)}
+        {asset.relatedImage && (
+          <div className={styles.relatedImage} title={`Related image: ${asset.relatedImage.fileName}`}
+            data-preview-id={!asset.relatedImage.thumbnailPath ? asset.relatedImage.id : undefined}
+            data-preview-key={`related:${asset.relatedImage.id}:${asset.relatedImage.filePath}`}>
+            {asset.relatedImage.thumbnailPath && !relatedError ? <img
+              src={convertFileSrc(asset.relatedImage.thumbnailPath)}
               alt={`Related image: ${asset.relatedImage.fileName}`}
               loading="lazy"
-              onError={() => setRelatedSource(relatedSource === 'thumb' && asset.relatedImage?.thumbnailPath ? 'file' : 'error')}
-            />
+              onError={() => setRelatedError(true)}
+            /> : <div className={styles.relatedPending}><IconImage size={20} /></div>}
             <span>Related image</span>
           </div>
         )}

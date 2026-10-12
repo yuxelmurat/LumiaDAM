@@ -118,6 +118,7 @@ pub struct Asset {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RelatedImage {
+    pub id: String,
     pub file_path: String,
     pub file_name: String,
     pub thumbnail_path: Option<String>,
@@ -172,6 +173,8 @@ pub struct AddLibraryPayload {
 
 #[derive(Debug, Deserialize)]
 pub struct SearchPayload {
+    #[serde(rename = "resultScope", default)]
+    pub result_scope: Option<String>,
     pub query: SearchQuery,
     pub page: i64,
     #[serde(rename = "pageSize")]
@@ -255,7 +258,7 @@ pub struct SortSpec {
     pub order: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SearchResult {
     pub folders: Vec<FolderResult>,
     #[serde(rename = "folderTotal")]
@@ -267,7 +270,7 @@ pub struct SearchResult {
     pub page_size: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FolderResult {
     pub library_id: String,

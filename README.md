@@ -160,7 +160,7 @@ apps/desktop/src-tauri/target/release/bundle/
 
 The NSIS installer target is configured, but clean-computer installer validation is still part of the roadmap.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the repository layout and development workflow.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the repository layout and development workflow. Performance behavior, preview prerequisites, and repeatable checks are documented in [library performance](docs/library-performance.md) and the [local search benchmark](docs/library-search-benchmark.md).
 
 ## Roadmap
 
@@ -173,6 +173,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the repository layout and development
 - [x] Separate Files and Folders views with counts
 - [x] Scan/preview activity panel and manual rescan
 - [x] Same-folder related preview matching
+- [x] Indexed path search, bounded query cache, and independent file/folder loading
+- [x] Incremental folder updates, visible preview priority, and adaptive activity polling
 - [x] Native HDR and EXR thumbnail generation
 - [x] Embedded local PhotoEditor with safe, non-destructive exports
 

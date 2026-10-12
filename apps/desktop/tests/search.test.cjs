@@ -14,12 +14,19 @@ const compiled = ts.transpileModule(source, {
 function setup(overrides = {}) {
   const requests = [];
   const timers = [];
+  const folderRequests = [];
   const errors = [];
   const exports = {};
   const api = {
-    searchAssets: (payload) => new Promise((resolve, reject) => {
-      requests.push({ payload, resolve, reject });
-    }),
+    searchAssets: (payload) => {
+      if (payload.resultScope === 'folders') {
+        return new Promise((resolve, reject) => {
+          folderRequests.push({ payload, resolve, reject });
+          if (!overrides.deferFolders) resolve({ folders: [], folderTotal: 0, assets: [], total: 0 });
+        });
+      }
+      return new Promise((resolve, reject) => { requests.push({ payload, resolve, reject }); });
+    },
     ...overrides,
   };
   runInNewContext(compiled, {
@@ -32,7 +39,7 @@ function setup(overrides = {}) {
   const finish = (index, id) => requests[index].resolve({
     assets: [{ id }], total: 1, page: 0, pageSize: 100,
   });
-  return { store, libraries: exports.useLibraryStore, ui: exports.useUIStore, requests, timers, errors, finish };
+  return { store, libraries: exports.useLibraryStore, ui: exports.useUIStore, requests, folderRequests, timers, errors, finish };
 }
 
 test('Kütüphane eklemek eski kapsamı temizler ve tıklama gerektirmeden tüm katalogları sorgular', async () => {
@@ -125,7 +132,7 @@ test('Koleksiyon filtresi klasöre girince ve geri dönünce görünür ve etkin
 });
 
 test('Eski klasör sonuçları yeni aramayı ezmez; klasör sayfası metin değişince sıfırlanır', async () => {
-  const { store, requests } = setup();
+  const { store, requests, folderRequests } = setup({ deferFolders: true });
   store.getState().setQuery({ text: 'kitchen', folderPage: 2 });
   const old = store.getState().search();
   store.getState().setQuery({ text: 'salon' });
@@ -133,6 +140,8 @@ test('Eski klasör sonuçları yeni aramayı ezmez; klasör sayfası metin deği
   assert.equal(requests[1].payload.query.folderPage, 0);
   requests[1].resolve({ assets: [], total: 0, folders: [{ name: 'salon' }], folderTotal: 1 });
   await current;
+  folderRequests[0].resolve({ folders: [{ name: 'salon' }], folderTotal: 1 });
+  await new Promise(setImmediate);
   requests[0].resolve({ assets: [], total: 0, folders: [{ name: 'kitchen' }], folderTotal: 10 });
   await old;
   assert.equal(store.getState().folders[0].name, 'salon');
@@ -260,4 +269,57 @@ test('Sorgu veya sayfa değişince yeni istek başlamasa bile eski cevap uygulan
     assert.equal(store.getState().assets.length, 0);
     assert.equal(store.getState().loading, false);
   }
+});
+
+test('Dosyalar yavaş klasör sonuçlarını beklemeden gösterilir', async () => {
+  const { store, requests, folderRequests, finish } = setup({ deferFolders: true });
+  store.getState().setQuery({ text: 'kitchen' });
+  const searching = store.getState().search();
+  finish(0, 'model');
+  await searching;
+  assert.equal(requests[0].payload.resultScope, 'files');
+  assert.equal(store.getState().assets[0].id, 'model');
+  assert.equal(store.getState().loading, false);
+  assert.equal(store.getState().folderLoading, true);
+  assert.equal(folderRequests.length, 1);
+  folderRequests[0].resolve({ folders: [{ path: 'kitchen' }], folderTotal: 500 });
+  await new Promise(setImmediate);
+  assert.equal(store.getState().folderTotal, 500);
+  assert.equal(store.getState().folderLoading, false);
+});
+
+test('Geç gelen klasör cevabı yeni aramanın klasörlerini değiştirmez', async () => {
+  const { store, folderRequests, finish } = setup({ deferFolders: true });
+  store.getState().setQuery({ text: 'old' });
+  const old = store.getState().search(); finish(0, 'old'); await old;
+  store.getState().setQuery({ text: 'current' });
+  const current = store.getState().search(); finish(1, 'current'); await current;
+  folderRequests[1].resolve({ folders: [{ path: 'current' }], folderTotal: 1 });
+  await new Promise(setImmediate);
+  folderRequests[0].resolve({ folders: [{ path: 'old' }], folderTotal: 9 });
+  await new Promise(setImmediate);
+  assert.equal(store.getState().folders[0].path, 'current');
+  assert.equal(store.getState().folderTotal, 1);
+  assert.equal(store.getState().assets[0].id, 'current');
+});
+
+test('Klasör sorgusu hatası dosyaları gizlemez', async () => {
+  const { store, folderRequests, finish } = setup({ deferFolders: true });
+  store.getState().setQuery({ text: 'kitchen' });
+  const searching = store.getState().search(); finish(0, 'model'); await searching;
+  folderRequests[0].reject(new Error('Folder query failed'));
+  await new Promise(setImmediate);
+  assert.equal(store.getState().searchError, null);
+  assert.ok(store.getState().folderError);
+  assert.equal(store.getState().assets[0].id, 'model');
+  assert.equal(store.getState().folderLoading, false);
+});
+
+test('Filtre ile gizlenen kardeş görselin tamamlanan önizlemesi ZIP kartını günceller', () => {
+  const { store } = setup();
+  const zip = { id: 'zip', relatedImage: { id: 'jpg', filePath: '/kitchen/9.jpg' } };
+  store.setState({ assets: [zip], assetMap: new Map([['zip', zip]]) });
+  store.getState().updateAssetPreview('jpg', '/local/thumbs/jpg/thumb.jpg');
+  assert.equal(store.getState().assets[0].relatedImage.thumbnailPath, '/local/thumbs/jpg/thumb.jpg');
+  assert.equal(store.getState().assetMap.get('zip').relatedImage.thumbnailPath, '/local/thumbs/jpg/thumb.jpg');
 });

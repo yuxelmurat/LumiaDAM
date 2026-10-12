@@ -63,7 +63,7 @@ async fn search_catalog(db: &Database, query: serde_json::Value, page_size: i64)
     let mut value = serde_json::json!({"text":"", "filter":{}, "sort":{"field":"name","order":"asc"}});
     value.as_object_mut().unwrap().extend(query.as_object().unwrap().clone());
     crate::commands::asset::search_catalogs(crate::models::SearchPayload {
-        query: serde_json::from_value(value).unwrap(), page: 0, page_size,
+        query: serde_json::from_value(value).unwrap(), page: 0, page_size, result_scope: None,
     }, db).await.unwrap()
 }
 
@@ -289,6 +289,8 @@ async fn legacy_migration_preserves_metadata_previews_and_source() {
         .execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO tags(id,name) VALUES('tag','Mutfak'); INSERT INTO asset_tags VALUES('asset','tag'); INSERT INTO collections(id,name,created_at) VALUES('collection','Favoriler',1); INSERT INTO collection_assets VALUES('collection','asset');")
         .execute(&pool).await.unwrap();
+    // WAL kapanışının arka plandaki checkpoint'i kaynak bayt ölçümünü etkilemesin.
+    sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)").execute(&pool).await.unwrap();
     pool.close().await;
     let original = std::fs::read(legacy.join("library.sqlite")).unwrap();
     let db = fixture.database().await;
@@ -309,7 +311,8 @@ async fn legacy_migration_preserves_metadata_previews_and_source() {
     }
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM assets_fts WHERE assets_fts MATCH '123*'").fetch_one(&handle.pool).await.unwrap();
     assert_eq!(count, 1);
-    assert_eq!(std::fs::read(legacy.join("library.sqlite")).unwrap(), original);
+    let after = std::fs::read(legacy.join("library.sqlite")).unwrap();
+    assert!(after == original, "source bytes changed: before={} after={}, first difference={:?}, before header={:?}, after header={:?}", original.len(), after.len(), original.iter().zip(&after).position(|(a,b)| a != b), &original[..100], &after[..100]);
     assert!(!legacy.join("index.lock").exists());
     close(db).await;
 }

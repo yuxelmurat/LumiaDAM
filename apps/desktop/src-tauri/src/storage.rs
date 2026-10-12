@@ -100,6 +100,7 @@ pub async fn prepare_catalog(storage_root: &Path, name: &str, id: &str, source: 
                 let mut transaction = connection.begin().await?;
                 // VACUUM sonrasında değişebilen rowid bağlantılarını güncellemeden önce kur.
                 sqlx::query("INSERT INTO assets_fts(assets_fts) VALUES('rebuild')").execute(&mut *transaction).await?;
+                crate::search_index::rebuild_after_snapshot(&mut transaction).await?;
                 let rows: Vec<(String, Option<String>, String)> = sqlx::query_as(
                     "SELECT id, thumbnail_path, metadata FROM assets"
                 ).fetch_all(&mut *transaction).await?;

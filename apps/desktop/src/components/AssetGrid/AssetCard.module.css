@@ -310,3 +310,5 @@
 }
 
 .filePath { font-size: 10px; color: var(--color-text-muted); overflow-wrap: anywhere; margin: 4px 0; }
+
+.relatedPending { height: 48px; display: grid; place-items: center; color: var(--color-text-muted); }

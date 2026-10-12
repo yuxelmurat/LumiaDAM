@@ -73,11 +73,8 @@ jobs:
       - name: Cargo clippy
         run: cargo clippy --all-targets -- -D warnings
         working-directory: apps/desktop/src-tauri
-      - name: Test catalog storage and migration
-        run: cargo test --lib storage::tests
-        working-directory: apps/desktop/src-tauri
-      - name: Test editor export protection
-        run: cargo test --lib commands::editor::tests
+      - name: Test catalog, search, scan, preview and editor behavior
+        run: cargo test --lib
         working-directory: apps/desktop/src-tauri
 
   # ── Python preview engine ────────────────────────────────────────────────

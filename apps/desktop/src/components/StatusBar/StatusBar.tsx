@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type LibraryWorkStatus } from '../../api';
 import { useAssetStore, useLibraryStore } from '../../store';
 import { IconRefresh } from '../Icons';
 import styles from './StatusBar.module.css';
+import { listen } from '@tauri-apps/api/event';
+import { createStatusPolling } from './statusPolling';
 
 export function StatusBar() {
   const { total, query, loading } = useAssetStore();
@@ -13,20 +15,30 @@ export function StatusBar() {
   const [rescanPending, setRescanPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refreshStatus = useCallback(async () => {
-    try {
-      setStatuses(await api.getLibraryWorkStatus());
-      setStatusLoaded(true);
-    } catch (cause) {
-      setError(String(cause));
-    }
-  }, []);
+  const openRef = useRef(open);
+  openRef.current = open;
+  const polling = useRef<ReturnType<typeof createStatusPolling> | null>(null);
+  const refreshStatus = useCallback(() => polling.current?.refresh() ?? Promise.resolve(), []);
 
   useEffect(() => {
-    void refreshStatus();
-    const timer = window.setInterval(() => { void refreshStatus(); }, 2000);
-    return () => window.clearInterval(timer);
-  }, [refreshStatus]);
+    const poller = createStatusPolling({
+      read: api.getLibraryWorkStatus,
+      panelOpen: () => openRef.current,
+      onStatus: (value) => { setStatuses(value); setStatusLoaded(true); setError(null); },
+      onError: (cause) => setError(String(cause)),
+    });
+    polling.current = poller;
+    void poller.refresh();
+    const listeners = ['preview:done', 'preview:error', 'library:updated', 'library:activity']
+      .map((name) => listen(name, poller.invalidate));
+    return () => {
+      poller.stop(); polling.current = null;
+      listeners.forEach((unlisten) => { void unlisten.then((fn) => fn()).catch(console.error); });
+    };
+  }, []);
+
+  const libraryIds = libraries.map((library) => library.id).join(',');
+  useEffect(() => { polling.current?.invalidate(); }, [libraryIds]);
 
   const rescan = async () => {
     setError(null);
@@ -81,12 +93,12 @@ export function StatusBar() {
           <strong>{status.name}</strong>
           <span>{status.scanning
             ? `Scanning files: ${status.scannedFiles.toLocaleString()} checked${status.estimatedRemaining === null ? '; remaining count unknown' : status.estimatedRemaining === 0 ? '; previous scan count reached, more files may remain' : `, about ${status.estimatedRemaining.toLocaleString()} remaining based on the previous scan`}`
-            : status.lastError ? 'Last scan failed' : status.lastScanAt ? 'File scan complete' : 'Not scanned yet'}</span>
+            : status.lastError ? 'Library needs attention' : status.lastScanAt ? 'File scan complete' : 'Not scanned yet'}</span>
           <span>Previews: {status.previewCompleted.toLocaleString()} / {status.previewTotal.toLocaleString()} complete
             {status.previewPending > 0 && ` · ${status.previewPending.toLocaleString()} remaining`}
             {status.previewFailed > 0 && ` · ${status.previewFailed.toLocaleString()} failed`}</span>
           <span>Last full scan: {status.lastScanAt ? new Date(status.lastScanAt).toLocaleString() : 'Not recorded yet'}</span>
-          {status.lastError && <span className={styles.error}>Last scan failed: {status.lastError}</span>}
+          {status.lastError && <span className={styles.error}>Library issue: {status.lastError}</span>}
         </div>)}
       </section>}
     </footer>

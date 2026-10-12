@@ -57,7 +57,7 @@ export interface Asset {
   /** Relative path to cached thumbnail (inside DAM cache dir) */
   thumbnailPath?: string;
   /** Aynı klasördeki eşleşen görsel; dosyanın kendi önizlemesi değildir. */
-  relatedImage?: { filePath: string; fileName: string; thumbnailPath?: string };
+  relatedImage?: { id?: string; filePath: string; fileName: string; thumbnailPath?: string };
   /** Whether a preview job is pending/running */
   previewStatus: 'none' | 'pending' | 'generating' | 'done' | 'error';
   metadata: AssetMeta;
@@ -138,6 +138,7 @@ export interface AddLibraryPayload {
 }
 
 export interface SearchPayload {
+  resultScope?: 'files' | 'folders';
   query: SearchQuery;
   page: number;
   pageSize: number;

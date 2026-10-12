@@ -3,6 +3,7 @@ pub mod db;
 pub mod models;
 pub mod watcher;
 pub mod preview;
+pub mod search_index;
 pub mod storage;
 pub mod folders;
 
@@ -65,6 +66,7 @@ pub fn run() {
             
             // Start the background preview worker queue
             crate::preview::start_preview_worker(state.clone());
+            crate::watcher::start_library_watchers(state.clone());
 
             // Açılışta NAS taraması yok: katalog hemen açılır, kaynak Yenile ile taranır.
 
@@ -96,6 +98,7 @@ pub fn run() {
             commands::collection::remove_from_collection,
             commands::collection::delete_collection,
             commands::preview::request_preview,
+            commands::preview::prioritize_previews,
             commands::preview::get_preview_jobs,
             commands::shell::reveal_in_explorer,
             commands::shell::open_with_default,
