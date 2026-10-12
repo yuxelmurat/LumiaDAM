@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useUIStore, useAssetStore, useLibraryStore } from '../../store';
 import { api } from '../../api';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open, message } from '@tauri-apps/plugin-dialog';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
   IconGrid, IconList, IconSearch, IconSidebar,
   IconPanel, IconRefresh, IconPlus,
   IconMenu, IconFolder, IconImage, IconSettings,
+  IconFileText, IconInfo, IconX,
 } from '../Icons';
 import styles from './Toolbar.module.css';
 import clsx from 'clsx';
 import { StorageSettings } from '../StorageSettings';
+import { AppInformation, type InformationPage } from '../AppInformation';
 
 interface ToolbarProps {
   workspace: 'library' | 'editor';
@@ -26,7 +29,9 @@ export function Toolbar({ workspace, editorAssetName, onOpenLibraries, onOpenPho
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [storageOpen, setStorageOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [informationPage, setInformationPage] = useState<InformationPage | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuTrigger = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -47,6 +52,15 @@ export function Toolbar({ workspace, editorAssetName, onOpenLibraries, onOpenPho
   const choose = (action: () => void) => {
     setMenuOpen(false);
     action();
+  };
+
+  const handleExit = async () => {
+    try {
+      // Normal kapanış isteği, editörün kaydedilmemiş değişiklik kontrolünü korur.
+      await getCurrentWindow().close();
+    } catch (reason) {
+      await message(`Could not close LumiaDAM: ${String(reason)}`, { title: 'Exit LumiaDAM', kind: 'error' }).catch(console.error);
+    }
   };
 
   const handleRefresh = async () => {
@@ -90,6 +104,7 @@ export function Toolbar({ workspace, editorAssetName, onOpenLibraries, onOpenPho
       {/* LumiaDAM amblemi ve adı */}
       <div className={styles.brandMenu} ref={menuRef}>
         <button
+          ref={menuTrigger}
           type="button"
           className={styles.brandTrigger}
           aria-label="Open LumiaDAM menu"
@@ -112,6 +127,20 @@ export function Toolbar({ workspace, editorAssetName, onOpenLibraries, onOpenPho
             <div className={styles.menuDivider} />
             <button type="button" role="menuitem" onClick={() => choose(() => setStorageOpen(true))}>
               <IconSettings size={17} /><span>Settings</span>
+            </button>
+            <div className={styles.menuDivider} role="separator" />
+            <button type="button" role="menuitem" onClick={() => choose(() => setInformationPage('help'))}>
+              <IconFileText size={17} /><span>Help</span>
+            </button>
+            <button type="button" role="menuitem" onClick={() => choose(() => setInformationPage('about'))}>
+              <IconInfo size={17} /><span>About</span>
+            </button>
+            <button type="button" role="menuitem" onClick={() => choose(() => setInformationPage('faq'))}>
+              <IconInfo size={17} /><span>FAQ</span>
+            </button>
+            <div className={styles.menuDivider} role="separator" />
+            <button type="button" role="menuitem" onClick={() => choose(handleExit)}>
+              <IconX size={17} /><span>Exit</span>
             </button>
           </div>
         )}
@@ -254,6 +283,10 @@ export function Toolbar({ workspace, editorAssetName, onOpenLibraries, onOpenPho
       )}
     </header>
     {storageOpen && <StorageSettings onClose={() => setStorageOpen(false)} />}
+    {informationPage && <AppInformation page={informationPage} onClose={() => {
+      setInformationPage(null);
+      menuTrigger.current?.focus();
+    }} />}
     </>
   );
 }

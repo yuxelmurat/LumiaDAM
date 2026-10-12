@@ -77,7 +77,7 @@ flowchart LR
 4. Browse the matching folder or refine the result with type and metadata filters.
 5. Open an image in **PhotoEditor**, export a new version, and keep the original untouched.
 
-The application menu beside the LumiaDAM logo keeps **Libraries**, **PhotoEditor**, and **Settings** in one consistent place. Switching back to Libraries does not discard the current editor session.
+The application menu beside the LumiaDAM logo contains **Libraries**, **PhotoEditor**, **Settings**, **Help**, **About**, **FAQ**, and **Exit**. Help includes a quick start guide and keyboard shortcuts; FAQ explains catalog storage, search, previews, and editing. About shows the app version, license credits, project links, and a support link. Exit uses the normal window close request so an open editor can warn about unsaved work. Switching back to Libraries does not discard the current editor session.
 
 ## Storage designed for real archives
 
