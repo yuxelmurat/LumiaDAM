@@ -3,6 +3,7 @@ import clsx from 'clsx';
 import { open } from '@tauri-apps/plugin-dialog';
 import { api } from '../../api';
 import { useUIStore, useAssetStore, useLibraryStore } from '../../store';
+import { observeVisiblePreviews } from './visiblePreviews';
 import { AssetCard } from './AssetCard';
 import { AssetListRow } from './AssetListRow';
 import { FilterBar } from './FilterBar';
@@ -18,25 +19,16 @@ const GRID_COLS: Record<'sm' | 'md' | 'lg', number> = {
 
 export function AssetGrid() {
   const { viewMode, gridSize, selectedAssetIds, selectAsset, clearSelection } = useUIStore();
-  const { assets, folders, folderTotal, loading, total, searchError, search, page, pageSize, setPage, query } = useAssetStore();
+  const { assets, folders, folderTotal, loading, total, searchError, folderLoading, folderError, searchFolders, search, page, pageSize, setPage, query } = useAssetStore();
   const [activeTab, setActiveTab] = useState<'files' | 'folders'>('files');
-  const requestedThumbnails = useRef(new Set<string>());
+  const previewViewport = useRef<HTMLDivElement>(null);
+  const prioritizedPreviews = useRef(new Set<string>());
 
   useEffect(() => { setActiveTab('files'); }, [query.folderPath]);
   useEffect(() => {
-    // Eski ortak önbellek geçersizse yalnız görüntülenen sayfadaki görselleri yeniden üret.
-    const ids = assets.filter((asset) =>
-      asset.previewStatus === 'done' && !asset.thumbnailPath &&
-      ['jpg', 'jpeg', 'png', 'bmp', 'tif', 'tiff', 'tga', 'webp', 'hdr', 'exr'].includes(asset.extension) &&
-      !requestedThumbnails.current.has(asset.id)
-    ).map((asset) => asset.id);
-    if (!ids.length) return;
-    ids.forEach((id) => requestedThumbnails.current.add(id));
-    void api.requestPreview(ids).catch((error) => {
-      ids.forEach((id) => requestedThumbnails.current.delete(id));
-      console.error('Unable to rebuild thumbnails:', error);
-    });
-  }, [assets]);
+    if (activeTab !== 'files' || !previewViewport.current) return;
+    return observeVisiblePreviews(previewViewport.current, prioritizedPreviews.current, api.prioritizePreviews);
+  }, [assets, activeTab, viewMode, gridSize, loading]);
 
   const tileSize = GRID_COLS[gridSize];
 
@@ -76,7 +68,7 @@ export function AssetGrid() {
           tabIndex={activeTab === 'folders' ? 0 : -1} aria-selected={activeTab === 'folders'}
           className={clsx(styles.tab, activeTab === 'folders' && styles.activeTab)}
           onClick={() => setActiveTab('folders')}>
-          Folders <small>{folderTotal.toLocaleString()}</small>
+          Folders <small aria-label={folderLoading ? 'Counting folders' : undefined}>{folderLoading ? '…' : folderError ? '!' : folderTotal.toLocaleString()}</small>
         </button>
       </div>
       {searchError ? (
@@ -90,14 +82,16 @@ export function AssetGrid() {
             <div key={i} className={clsx(styles.skeletonCard, 'skeleton')} />
           ))}
         </div>
-      ) : !loading && total === 0 && folderTotal === 0 ? (
+      ) : !loading && !folderLoading && !folderError && total === 0 && folderTotal === 0 ? (
         <EmptyState />
       ) : activeTab === 'folders' ? (
         <div className={styles.scrollArea} role="tabpanel" id="folders-panel" aria-labelledby="folders-tab">
-          {folderTotal ? <FolderResults /> : <p className={styles.emptyText}>No matching folders.</p>}
+          {folderLoading ? <p className={styles.emptyText} role="status">Searching folders…</p> : folderError ? <div role="alert">
+            <p className={styles.emptyText}>{folderError}</p><button type="button" onClick={() => void searchFolders()}>Try again</button>
+          </div> : folderTotal ? <FolderResults /> : <p className={styles.emptyText}>No matching folders.</p>}
         </div>
       ) : (
-      <div className={styles.scrollArea} role="tabpanel" id="files-panel" aria-labelledby="files-tab" onClick={handleBackdropClick}>
+      <div className={styles.scrollArea} role="tabpanel" ref={previewViewport} id="files-panel" aria-labelledby="files-tab" onClick={handleBackdropClick}>
         {total === 0 ? <p className={styles.emptyText}>No matching files. Check the Folders tab or adjust your filters.</p> : viewMode === 'grid' ? (
           <div
             className={styles.grid}

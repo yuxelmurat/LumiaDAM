@@ -28,8 +28,8 @@ export const AssetListRow = memo(function AssetListRow({
   asset, selected, onClick,
 }: AssetListRowProps) {
   const patchAsset = useAssetStore((s) => s.patchAsset);
-  const [relatedSource, setRelatedSource] = useState<'thumb' | 'file' | 'error'>('thumb');
-  useEffect(() => setRelatedSource('thumb'), [asset.relatedImage?.filePath, asset.relatedImage?.thumbnailPath]);
+  const [relatedError, setRelatedError] = useState(false);
+  useEffect(() => setRelatedError(false), [asset.relatedImage?.filePath, asset.relatedImage?.thumbnailPath]);
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -82,11 +82,10 @@ export const AssetListRow = memo(function AssetListRow({
       </button>
 
       {/* Thumbnail */}
-      <div className={styles.thumb}>
+      <div className={styles.thumb} data-preview-id={!asset.thumbnailPath ? asset.id : undefined}
+        data-preview-key={`${asset.id}:${asset.modifiedAt}`}>
         {asset.thumbnailPath && !asset.thumbnailPath.endsWith('.glb') ? (
           <img src={convertFileSrc(asset.thumbnailPath)} alt={asset.fileName} className={styles.thumbImg} loading="lazy" />
-        ) : (['image', 'texture'].includes(asset.kind) && asset.filePath) ? (
-          <img src={convertFileSrc(asset.filePath)} alt={asset.fileName} className={styles.thumbImg} loading="lazy" />
         ) : (
           <div className={styles.thumbPlaceholder}>
             {asset.kind === 'video' ? <IconVideo size={14} /> : <IconImage size={14} />}
@@ -94,14 +93,16 @@ export const AssetListRow = memo(function AssetListRow({
         )}
       </div>
 
-      {asset.relatedImage && relatedSource !== 'error' && (
-        <div className={styles.relatedImage} title={`Related image: ${asset.relatedImage.fileName}`}>
-          <img
-            src={convertFileSrc(relatedSource === 'thumb' && asset.relatedImage.thumbnailPath || asset.relatedImage.filePath)}
+      {asset.relatedImage && (
+        <div className={styles.relatedImage} title={`Related image: ${asset.relatedImage.fileName}`}
+          data-preview-id={!asset.relatedImage.thumbnailPath ? asset.relatedImage.id : undefined}
+          data-preview-key={`related:${asset.relatedImage.id}:${asset.relatedImage.filePath}`}>
+          {asset.relatedImage.thumbnailPath && !relatedError ? <img
+            src={convertFileSrc(asset.relatedImage.thumbnailPath)}
             alt={`Related image: ${asset.relatedImage.fileName}`}
             loading="lazy"
-            onError={() => setRelatedSource(relatedSource === 'thumb' && asset.relatedImage?.thumbnailPath ? 'file' : 'error')}
-          />
+            onError={() => setRelatedError(true)}
+          /> : <div className={styles.thumbPlaceholder}><IconImage size={14} /></div>}
         </div>
       )}
 

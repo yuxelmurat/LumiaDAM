@@ -88,6 +88,8 @@ export const api = {
     invoke<void>('delete_collection', { id }),
 
   // Preview
+  prioritizePreviews: (assetIds: string[]) =>
+    invoke<void>('prioritize_previews', { assetIds }),
   requestPreview: (assetIds: string[]) =>
     invoke<void>('request_preview', { assetIds }),
   getPreviewJobs: () => invoke<PreviewJob[]>('get_preview_jobs'),

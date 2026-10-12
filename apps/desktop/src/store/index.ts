@@ -173,6 +173,8 @@ interface AssetStore {
   pageSize: number;
   loading: boolean;
   searchError: string | null;
+  folderLoading: boolean;
+  folderError: string | null;
   query: SearchQuery;
   assetMap: Map<string, Asset>;
 
@@ -184,6 +186,8 @@ interface AssetStore {
   setSort: (field: SortField, order?: SortOrder) => void;
   setPage: (page: number) => void;
   search: (delayMs?: number) => Promise<void>;
+  searchFolders: () => Promise<void>;
+  setFolderPage: (page: number) => void;
   patchAsset: (id: string, patch: Partial<Asset>) => Promise<void>;
   deleteAsset: (id: string, deleteFile?: boolean) => Promise<void>;
   deleteAssets: (ids: string[], deleteFile?: boolean) => Promise<void>;
@@ -201,6 +205,7 @@ const defaultQuery: SearchQuery = {
 };
 
 let searchRequestId = 0;
+let folderRequestId = 0;
 let displayedQuery = defaultQuery;
 let displayedPage = 0;
 let displayedPageSize = 100;
@@ -233,6 +238,8 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
   pageSize: 100,
   loading: false,
   searchError: null,
+  folderLoading: false,
+  folderError: null,
   query: defaultQuery,
   assetMap: new Map(),
 
@@ -287,6 +294,7 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
   search: async (delayMs = 0) => {
     const { query, page, pageSize } = get();
     const requestId = ++searchRequestId;
+    ++folderRequestId;
     const isCurrent = () => requestId === searchRequestId &&
       get().query === query && get().page === page && get().pageSize === pageSize;
 
@@ -295,19 +303,23 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
     set({
       loading: true,
       searchError: null,
+      folderError: null,
+      folderLoading: false,
       ...(changed ? { folders: [], folderTotal: 0, assets: [], total: 0, assetMap: new Map<string, Asset>() } : {}),
     });
     try {
       // Yazma duraklamasını bekleyen eski istekler veritabanına hiç gönderilmez.
       if (delayMs > 0) await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
       if (!isCurrent()) return;
-      const result = await api.searchAssets({ query, page, pageSize });
+      const result = await api.searchAssets({ query, page, pageSize, resultScope: 'files' });
       if (!isCurrent()) return;
       displayedQuery = query;
       displayedPage = page;
       displayedPageSize = pageSize;
       const assetMap = new Map(result.assets.map((a) => [a.id, a]));
-      set({ assets: result.assets, total: result.total, folders: result.folders ?? [], folderTotal: result.folderTotal ?? 0, assetMap });
+      set({ assets: result.assets, total: result.total, assetMap });
+      // Klasör sayımı yavaş olsa da dosyalar hemen kullanılabilir.
+      void get().searchFolders();
     } catch (error) {
       if (isCurrent()) {
         console.error('Asset search failed:', error);
@@ -316,6 +328,30 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
     } finally {
       // Eski bir istek, devam eden yeni isteğin yükleme durumunu kapatamaz.
       if (requestId === searchRequestId) set({ loading: false });
+    }
+  },
+
+  setFolderPage: (folderPage) => set((s) => ({ query: { ...s.query, folderPage } })),
+
+  searchFolders: async () => {
+    const { query, pageSize } = get();
+    const requestId = ++folderRequestId;
+    const isCurrent = () => requestId === folderRequestId && get().query === query && get().pageSize === pageSize;
+    if (!query.text.trim() && query.folderPath === undefined) {
+      set({ folders: [], folderTotal: 0, folderLoading: false, folderError: null });
+      return;
+    }
+    set({ folderLoading: true, folderError: null });
+    try {
+      const result = await api.searchAssets({ query, page: 0, pageSize, resultScope: 'folders' });
+      if (isCurrent()) set({ folders: result.folders, folderTotal: result.folderTotal });
+    } catch (error) {
+      if (isCurrent()) {
+        console.error('Folder search failed:', error);
+        set({ folderError: 'Unable to load folders. Please try again.' });
+      }
+    } finally {
+      if (requestId === folderRequestId) set({ folderLoading: false });
     }
   },
 
@@ -374,18 +410,20 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
 
   updateAssetPreview: (id, thumbnailPath, previewModel) => {
     set((s) => {
-      const asset = s.assetMap.get(id);
-      if (!asset) return s;
-      const updated: Asset = {
-        ...asset,
-        thumbnailPath: thumbnailPath || asset.thumbnailPath,
-        previewStatus: 'done',
-        metadata: previewModel ? { ...asset.metadata, preview_model: previewModel } : asset.metadata,
-      };
-      return {
-        assets: s.assets.map((a) => (a.id === id ? updated : a)),
-        assetMap: new Map(s.assetMap).set(id, updated),
-      };
+      let changed = false;
+      const assets = s.assets.map((asset) => {
+        if (asset.id === id) {
+          changed = true;
+          return { ...asset, thumbnailPath: thumbnailPath || asset.thumbnailPath, previewStatus: 'done' as const,
+            metadata: previewModel ? { ...asset.metadata, preview_model: previewModel } : asset.metadata };
+        }
+        if (thumbnailPath && asset.relatedImage?.id === id) {
+          changed = true;
+          return { ...asset, relatedImage: { ...asset.relatedImage, thumbnailPath } };
+        }
+        return asset;
+      });
+      return changed ? { assets, assetMap: new Map(assets.map((asset) => [asset.id, asset])) } : s;
     });
   },
 

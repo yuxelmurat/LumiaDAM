@@ -21,10 +21,10 @@ export function FolderNavigation() {
 }
 
 export function FolderResults() {
-  const { folders, folderTotal, query, pageSize, setQuery, search, openFolder } = useAssetStore();
+  const { folders, folderTotal, query, pageSize, setFolderPage, searchFolders, openFolder } = useAssetStore();
   if (!folderTotal) return null;
   const page = query.folderPage ?? 0;
-  const changePage = (folderPage: number) => { setQuery({ folderPage }); search(); };
+  const changePage = (folderPage: number) => { setFolderPage(folderPage); void searchFolders(); };
   return (
     <section className={styles.folderResults} aria-label="Folder results">
       <h2>Folders ({folderTotal.toLocaleString()})</h2>

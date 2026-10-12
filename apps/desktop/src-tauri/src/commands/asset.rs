@@ -109,20 +109,21 @@ async fn attach_related_images(pool: &sqlx::SqlitePool, root: &Path, assets: &mu
     let mut images = HashMap::new();
     let paths: Vec<_> = unique.into_iter().collect();
     for chunk in paths.chunks(400) {
-        let mut query = QueryBuilder::<Sqlite>::new("SELECT file_path, file_name, thumbnail_path FROM assets WHERE file_path COLLATE NOCASE IN (");
+        let mut query = QueryBuilder::<Sqlite>::new("SELECT id, file_path, file_name, thumbnail_path FROM assets WHERE file_path COLLATE NOCASE IN (");
         let mut separated = query.separated(", ");
         for path in chunk { separated.push_bind(path); }
         separated.push_unseparated(") AND lower(extension) IN ('jpg','jpeg','png','webp')");
-        let rows: Vec<(String, String, Option<String>)> = query.build_query_as().fetch_all(pool).await.map_err(|e| e.to_string())?;
-        for (path, name, thumbnail) in rows { images.insert(path.to_ascii_lowercase(), (path, name, thumbnail)); }
+        let rows: Vec<(String, String, String, Option<String>)> = query.build_query_as().fetch_all(pool).await.map_err(|e| e.to_string())?;
+        for (id, path, name, thumbnail) in rows { images.insert(path.to_ascii_lowercase(), (id, path, name, thumbnail)); }
     }
 
     for (asset, paths) in assets.iter_mut().zip(candidates) {
-        if let Some((path, name, thumbnail)) = paths.iter().find_map(|path| images.get(path)) {
+        if let Some((id, path, name, thumbnail)) = paths.iter().find_map(|path| images.get(path)) {
             let thumbnail_path = thumbnail.as_ref()
                 .filter(|thumb| !is_legacy_thumbnail(thumb))
                 .map(|thumb| resolve_path(root, thumb));
             asset.related_image = Some(RelatedImage {
+                id: id.clone(),
                 file_path: resolve_path(root, path),
                 file_name: name.clone(),
                 thumbnail_path,
@@ -141,14 +142,31 @@ pub async fn search_assets(
 }
 
 pub(crate) async fn search_catalogs(payload: SearchPayload, db: &crate::db::Database) -> Result<SearchResult> {
-    let all_libs = db.get_all_libraries().await;
+    let started = std::time::Instant::now();
     if !db.storage_errors.is_empty() {
         return Err("Some catalogs could not be opened. Check the transfer errors in Storage settings.".into());
     }
-    let target_libs: Vec<_> = all_libs.iter()
-        .filter(|lib| crate::folders::includes_library(&payload.query, &lib.id))
-        .map(|lib| (lib.pool.clone(), Some(lib.root_path.clone())))
-        .collect();
+    if !matches!(payload.result_scope.as_deref(), None | Some("files") | Some("folders")) {
+        return Err("Invalid result scope".into());
+    }
+    let mut libraries = db.get_all_libraries().await;
+    libraries.retain(|lib| crate::folders::includes_library(&payload.query, &lib.id));
+    libraries.sort_by(|a, b| a.id.cmp(&b.id));
+    let before = crate::search_index::revisions(&libraries).await.map_err(|e| e.to_string())?;
+    let key = format!("{:?}|{before}", payload);
+    if let Some(result) = crate::search_index::cached(&key) {
+        tracing::debug!(elapsed_ms = started.elapsed().as_millis() as u64, cache_hit = true, "Catalog search");
+        return Ok(result);
+    }
+    let result = search_uncached(&payload, &libraries).await?;
+    if before == crate::search_index::revisions(&libraries).await.map_err(|e| e.to_string())? {
+        crate::search_index::cache(key, &result);
+    }
+    tracing::debug!(elapsed_ms = started.elapsed().as_millis() as u64, cache_hit = false, scope = ?payload.result_scope, "Catalog search");
+    Ok(result)
+}
+
+async fn search_uncached(payload: &SearchPayload, all_libs: &[crate::db::LibraryHandle]) -> Result<SearchResult> {
     let limit = payload.page_size.clamp(1, 500);
     let offset = payload.page.max(0).saturating_mul(limit);
     let f = &payload.query.filter;
@@ -421,165 +439,77 @@ pub(crate) async fn search_catalogs(payload: SearchPayload, db: &crate::db::Data
         }
     }
 
-    // Aynı filtre koşulları hem dosyalarda hem klasörlerin altındaki dosyalarda kullanılır.
-    let (folders, folder_total) = crate::folders::search(&all_libs, &payload.query, limit, &conditions, &binds)
-        .await.map_err(|e| e.to_string())?;
-    for word in payload.query.text.split_whitespace() {
-        conditions.push("(a.id IN (SELECT id FROM assets_fts WHERE assets_fts MATCH ?) OR instr(lower(replace(catalog.root_path || '/' || a.file_path, char(92), '/')), lower(?)) > 0)".into());
-        binds.push(format!("\"{}\"*", word.replace('"', "\"\"")));
-        binds.push(word.replace('\\', "/"));
+    let (folders, folder_total) = if payload.result_scope.as_deref() == Some("files") {
+        (Vec::new(), 0)
+    } else {
+        crate::folders::search(all_libs, &payload.query, limit, &conditions, &binds)
+            .await.map_err(|e| e.to_string())?
+    };
+    if payload.result_scope.as_deref() == Some("folders") {
+        return Ok(SearchResult { folders, folder_total, assets: Vec::new(), total: 0, page: payload.page, page_size: payload.page_size });
     }
     if let Some(path) = &payload.query.folder_path {
         let prefix = if path.is_empty() { String::new() } else { format!("{}/", path.trim_end_matches('/')) };
-        conditions.push(crate::folders::DIRECT_FILES.into());
-        binds.extend([prefix.clone(), prefix.clone(), prefix]);
+        if prefix.is_empty() {
+            conditions.push("instr(replace(a.file_path,char(92),'/'),'/') = 0".into());
+        } else {
+            conditions.push(crate::folders::DIRECT_FILES.into());
+            let upper = format!("{}0", &prefix[..prefix.len()-1]);
+            binds.extend([prefix.clone(), upper, prefix]);
+        }
     }
-
-    let where_clause = if conditions.is_empty() {
-        String::new()
-    } else {
-        format!("WHERE {}", conditions.join(" AND "))
-    };
-
     let sort_col = match payload.query.sort.field.as_str() {
-        "name"     => "a.file_name",
-        "size"     => "a.size_bytes",
-        "rating"   => "a.rating",
-        "kind"     => "a.kind",
-        "favorite" => "a.is_favorite",
-        _          => "a.modified_at",
+        "name" => "a.file_name", "size" => "a.size_bytes", "rating" => "a.rating",
+        "kind" => "a.kind", "favorite" => "a.is_favorite", _ => "a.modified_at",
     };
     let sort_dir = if payload.query.sort.order == "asc" { "ASC" } else { "DESC" };
-
-    let count_sql = format!(
-        "SELECT COUNT(*) FROM assets a CROSS JOIN (SELECT ? AS root_path) catalog {}",
-        where_clause
-    );
-    let data_sql = format!(
-        r#"SELECT
+    let single = all_libs.len() == 1;
+    let mut total = 0;
+    let mut all_assets: Vec<(Asset, usize)> = Vec::new();
+    for (library_index, lib) in all_libs.iter().enumerate() {
+        let (mut text_conditions, text_binds) = crate::search_index::text_conditions(&payload.query.text, &lib.root_path.to_string_lossy(), true);
+        text_conditions.extend(conditions.iter().cloned());
+        let where_clause = if text_conditions.is_empty() { String::new() } else { format!("WHERE {}", text_conditions.join(" AND ")) };
+        let query_binds: Vec<_> = text_binds.iter().chain(binds.iter()).collect();
+        let count_sql = format!("SELECT COUNT(*) FROM assets a {where_clause}");
+        let data_sql = format!(r#"SELECT
             a.id, a.file_path, a.file_name, a.extension, a.kind,
             a.size_bytes, a.modified_at, a.indexed_at, a.rating,
             a.color_label, a.is_favorite, a.description, a.thumbnail_path,
             a.preview_status, a.metadata,
             (SELECT json_group_array(tag_id) FROM asset_tags WHERE asset_id = a.id) AS tags,
             (SELECT json_group_array(collection_id) FROM collection_assets WHERE asset_id = a.id) AS collections
-           FROM assets a CROSS JOIN (SELECT ? AS root_path) catalog
-           {}
-           ORDER BY {} {}
-           LIMIT ? OFFSET ?"#,
-        where_clause, sort_col, sort_dir
-    );
-
-    if target_libs.len() == 1 {
-        let (pool, root_opt) = &target_libs[0];
-
-        let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql).bind(root_opt.as_ref().map(|root| root.to_string_lossy().into_owned()).unwrap_or_default());
-        for b in &binds {
-            count_query = count_query.bind(b.clone());
-        }
-        let total = count_query.fetch_one(pool).await.map_err(|e| e.to_string())?;
-
-        let mut data_query = sqlx::query_as::<_, RawAssetRow>(&data_sql).bind(root_opt.as_ref().map(|root| root.to_string_lossy().into_owned()).unwrap_or_default());
-        for b in &binds {
-            data_query = data_query.bind(b.clone());
-        }
-        data_query = data_query.bind(limit).bind(offset);
-
-        let rows = data_query.fetch_all(pool).await.map_err(|e| e.to_string())?;
-        let root_ref = root_opt.as_deref();
-        let mut assets: Vec<Asset> = rows
-            .into_iter()
-            .map(|r| row_to_asset(root_ref, r))
-            .collect();
-        if let Some(root) = root_ref { attach_related_images(pool, root, &mut assets).await?; }
-
-        return Ok(SearchResult {
-            folders, folder_total,
-            assets,
-            total,
-            page: payload.page,
-            page_size: payload.page_size,
+            FROM assets a {where_clause} ORDER BY {sort_col} {sort_dir} LIMIT ? OFFSET ?"#);
+        let mut count = sqlx::query_scalar::<_, i64>(&count_sql);
+        let mut data = sqlx::query_as::<_, RawAssetRow>(&data_sql);
+        for value in query_binds { count = count.bind(value); data = data.bind(value); }
+        total += count.fetch_one(&lib.pool).await.map_err(|e| e.to_string())?;
+        let rows = data.bind(if single { limit } else { offset.saturating_add(limit) }).bind(if single { offset } else { 0 })
+            .fetch_all(&lib.pool).await.map_err(|e| e.to_string())?;
+        all_assets.extend(rows.into_iter().map(|row| (row_to_asset(Some(&lib.root_path), row), library_index)));
+    }
+    if !single {
+        let is_asc = payload.query.sort.order == "asc";
+        all_assets.sort_by(|(a, _), (b, _)| {
+            let cmp = match payload.query.sort.field.as_str() {
+                "name" => a.file_name.to_lowercase().cmp(&b.file_name.to_lowercase()),
+                "size" => a.size_bytes.cmp(&b.size_bytes), "rating" => a.rating.cmp(&b.rating),
+                "kind" => a.kind.cmp(&b.kind), "favorite" => a.is_favorite.cmp(&b.is_favorite),
+                _ => a.modified_at.cmp(&b.modified_at),
+            };
+            if is_asc { cmp } else { cmp.reverse() }
         });
     }
-
-    // Multiple libraries: query each, combine counts, and merge-sort
-    let fetch_limit = offset + limit;
-    let multi_data_sql = format!(
-        r#"SELECT
-            a.id, a.file_path, a.file_name, a.extension, a.kind,
-            a.size_bytes, a.modified_at, a.indexed_at, a.rating,
-            a.color_label, a.is_favorite, a.description, a.thumbnail_path,
-            a.preview_status, a.metadata,
-            (SELECT json_group_array(tag_id) FROM asset_tags WHERE asset_id = a.id) AS tags,
-            (SELECT json_group_array(collection_id) FROM collection_assets WHERE asset_id = a.id) AS collections
-           FROM assets a CROSS JOIN (SELECT ? AS root_path) catalog
-           {}
-           ORDER BY {} {}
-           LIMIT ?"#,
-        where_clause, sort_col, sort_dir
-    );
-
-    let mut total: i64 = 0;
-    let mut all_assets: Vec<(Asset, usize)> = Vec::new();
-
-    for (library_index, (pool, root_opt)) in target_libs.iter().enumerate() {
-        let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql).bind(root_opt.as_ref().map(|root| root.to_string_lossy().into_owned()).unwrap_or_default());
-        for b in &binds {
-            count_query = count_query.bind(b.clone());
-        }
-        if let Ok(c) = count_query.fetch_one(pool).await {
-            total += c;
-        }
-
-        let mut data_query = sqlx::query_as::<_, RawAssetRow>(&multi_data_sql).bind(root_opt.as_ref().map(|root| root.to_string_lossy().into_owned()).unwrap_or_default());
-        for b in &binds {
-            data_query = data_query.bind(b.clone());
-        }
-        data_query = data_query.bind(fetch_limit);
-
-        if let Ok(rows) = data_query.fetch_all(pool).await {
-            let root_ref = root_opt.as_deref();
-            all_assets.extend(rows.into_iter().map(|r| (row_to_asset(root_ref, r), library_index)));
-        }
-    }
-
-    let sort_field = payload.query.sort.field.as_str();
-    let is_asc = payload.query.sort.order == "asc";
-    all_assets.sort_by(|(a, _), (b, _)| {
-        let cmp = match sort_field {
-            "name"     => a.file_name.to_lowercase().cmp(&b.file_name.to_lowercase()),
-            "size"     => a.size_bytes.cmp(&b.size_bytes),
-            "rating"   => a.rating.cmp(&b.rating),
-            "kind"     => a.kind.cmp(&b.kind),
-            "favorite" => a.is_favorite.cmp(&b.is_favorite),
-            _          => a.modified_at.cmp(&b.modified_at),
-        };
-        if is_asc { cmp } else { cmp.reverse() }
-    });
-
-    let mut page_entries: Vec<(Asset, usize)> = all_assets
-        .into_iter()
-        .skip(offset as usize)
-        .take(limit as usize)
-        .collect();
-
-    for (library_index, (pool, root_opt)) in target_libs.iter().enumerate() {
-        let Some(root) = root_opt.as_deref() else { continue };
-        let positions: Vec<usize> = page_entries.iter().enumerate()
-            .filter_map(|(position, (_, index))| (*index == library_index).then_some(position))
-            .collect();
-        let mut assets: Vec<Asset> = positions.iter().map(|position| page_entries[*position].0.clone()).collect();
-        attach_related_images(pool, root, &mut assets).await?;
+    let mut page_entries: Vec<_> = all_assets.into_iter().skip(if single { 0 } else { offset as usize }).take(limit as usize).collect();
+    for (library_index, lib) in all_libs.iter().enumerate() {
+        let positions: Vec<_> = page_entries.iter().enumerate().filter_map(|(position, (_, index))| (*index == library_index).then_some(position)).collect();
+        let mut assets: Vec<_> = positions.iter().map(|position| page_entries[*position].0.clone()).collect();
+        attach_related_images(&lib.pool, &lib.root_path, &mut assets).await?;
         for (position, asset) in positions.into_iter().zip(assets) { page_entries[position].0 = asset; }
     }
-    let paged_assets = page_entries.into_iter().map(|(asset, _)| asset).collect();
-
     Ok(SearchResult {
-        folders, folder_total,
-        assets: paged_assets,
-        total,
-        page: payload.page,
-        page_size: payload.page_size,
+        folders, folder_total, assets: page_entries.into_iter().map(|(asset, _)| asset).collect(),
+        total, page: payload.page, page_size: payload.page_size,
     })
 }
 

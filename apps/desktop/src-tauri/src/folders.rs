@@ -61,28 +61,26 @@ pub async fn search(libraries: &[LibraryHandle], query: &SearchQuery, page_size:
     let limit = offset.saturating_add(page_size);
     let mut folders = Vec::new();
     let mut total = 0;
-    let mut conditions = vec!["(? IS NULL OR folders.parent = ?)".to_string()];
-    for _ in text.split_whitespace() {
-        conditions.push("instr(lower(replace(catalog.root_path || '/' || folders.path, char(92), '/')), lower(?)) > 0".into());
-    }
-    if !filters.is_empty() {
-        conditions.push(format!("EXISTS (SELECT 1 FROM assets a WHERE (folders.path = '' OR substr(replace(a.file_path, char(92), '/'), 1, length(folders.path) + 1) = folders.path || '/') AND {})", filters.join(" AND ")));
-    }
-    let condition = conditions.join(" AND ");
-    let source = "WITH candidates AS (SELECT path,name,parent FROM folders UNION ALL SELECT '',?,NULL)";
-    let count_sql = format!("{source} SELECT COUNT(*) FROM candidates folders CROSS JOIN (SELECT ? AS root_path) catalog WHERE {condition}");
-    let rows_sql = format!("{source} SELECT path,name FROM candidates folders CROSS JOIN (SELECT ? AS root_path) catalog WHERE {condition} ORDER BY path COLLATE NOCASE, path LIMIT ?");
     for lib in libraries.iter().filter(|lib| includes_library(query, &lib.id)) {
-        let root_name = lib.root_path.file_name().and_then(|name| name.to_str()).unwrap_or(&lib.name);
-        let root = lib.root_path.to_string_lossy();
-        let mut count = sqlx::query_scalar::<_, i64>(&count_sql).bind(root_name).bind(root.as_ref())
-            .bind(&query.folder_path).bind(&query.folder_path);
-        let mut rows = sqlx::query_as::<_, (String, String)>(&rows_sql).bind(root_name).bind(root.as_ref())
-            .bind(&query.folder_path).bind(&query.folder_path);
-        for value in text.split_whitespace().map(|word| word.replace('\\', "/")).chain(filter_binds.iter().cloned()) {
-            count = count.bind(value.clone());
-            rows = rows.bind(value);
+        let (mut conditions, mut binds) = crate::search_index::text_conditions(text, &lib.root_path.to_string_lossy(), false);
+        if let Some(parent) = &query.folder_path {
+            conditions.push("folders.parent = ?".into());
+            binds.push(parent.clone());
         }
+        if !filters.is_empty() {
+            let filter = filters.join(" AND ");
+            conditions.push(format!("CASE WHEN folders.path = '' THEN EXISTS (SELECT 1 FROM assets a WHERE {filter}) ELSE EXISTS (SELECT 1 FROM assets a WHERE replace(a.file_path,char(92),'/') >= folders.path || '/' AND replace(a.file_path,char(92),'/') < folders.path || '0' AND {filter}) END"));
+            binds.extend(filter_binds.iter().cloned());
+            binds.extend(filter_binds.iter().cloned());
+        }
+        let condition = if conditions.is_empty() { String::new() } else { format!("WHERE {}", conditions.join(" AND ")) };
+        let source = "WITH candidates AS (SELECT rowid,path,name,parent FROM folders UNION ALL SELECT NULL,'',?,NULL)";
+        let count_sql = format!("{source} SELECT COUNT(*) FROM candidates folders {condition}");
+        let rows_sql = format!("{source} SELECT path,name FROM candidates folders {condition} ORDER BY path COLLATE NOCASE, path LIMIT ?");
+        let root_name = lib.root_path.file_name().and_then(|name| name.to_str()).unwrap_or(&lib.name);
+        let mut count = sqlx::query_scalar::<_, i64>(&count_sql).bind(root_name);
+        let mut rows = sqlx::query_as::<_, (String, String)>(&rows_sql).bind(root_name);
+        for value in binds { count = count.bind(value.clone()); rows = rows.bind(value); }
         total += count.fetch_one(&lib.pool).await?;
         let rows = rows.bind(limit).fetch_all(&lib.pool).await?;
         folders.extend(rows.into_iter().map(|(path, name)| FolderResult {
@@ -95,4 +93,4 @@ pub async fn search(libraries: &[LibraryHandle], query: &SearchQuery, page_size:
 }
 
 /// Tam klasör sınırıyla eşleşir; kitchen-old ve alt klasörlerdeki dosyalar karışmaz.
-pub const DIRECT_FILES: &str = "substr(replace(a.file_path, char(92), '/'), 1, length(?)) = ? AND instr(substr(replace(a.file_path, char(92), '/'), length(?) + 1), '/') = 0";
+pub const DIRECT_FILES: &str = "replace(a.file_path, char(92), '/') >= ? AND replace(a.file_path, char(92), '/') < ? AND instr(substr(replace(a.file_path, char(92), '/'), length(?) + 1), '/') = 0";

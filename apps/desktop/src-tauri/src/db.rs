@@ -4,7 +4,7 @@ use sqlx::{Pool, Sqlite};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use tokio::sync::RwLock;
 
 /// Sondaki ayırıcıları yok sayar; sürücü kökünde harfi, ağ paylaşımında paylaşım adını kullanır.
@@ -24,6 +24,7 @@ pub struct LibraryHandle {
     pub catalog_dir: PathBuf,
     pub scan_lock: Arc<tokio::sync::Mutex<()>>,
     pub scan_processed: Arc<AtomicU64>,
+    pub scan_full: Arc<AtomicBool>,
     pub pool: Pool<Sqlite>,
 }
 
@@ -34,18 +35,44 @@ pub struct Database {
     pub storage_root: PathBuf,
     pub default_storage_root: PathBuf,
     pub storage_errors: Vec<String>,
+    pub preview_wakeup: Arc<tokio::sync::Notify>,
 }
 
-/// Connect to a per-library SQLite database with NAS-safe settings.
-/// WAL mode is intentionally avoided: on SMB/NFS shares the -shm shared-memory
-/// locking that WAL requires is unreliable and can silently corrupt the database
-/// when multiple machines write concurrently. DELETE (rollback) journal is the
-/// SQLite-recommended safe choice for any network filesystem.
+/// Yerel diskler WAL; bilinmeyen konumlar DELETE kullanir.
+fn library_journal_mode(db_path: &Path) -> SqliteJournalMode {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        #[link(name = "kernel32")]
+        extern "system" { fn GetDriveTypeW(root_path: *const u16) -> u32; }
+        let absolute = if db_path.is_absolute() { db_path.to_path_buf() } else {
+            match std::env::current_dir() { Ok(dir) => dir.join(db_path), Err(_) => return SqliteJournalMode::Delete }
+        };
+        let value = absolute.to_string_lossy().replace('/', "\\");
+        if value.starts_with("\\\\") { return SqliteJournalMode::Delete; }
+        // Yerel sürücü içindeki junction bir ağ konumuna gidebilir; gerçek hedefi denetle.
+        let Some(parent) = absolute.parent() else { return SqliteJournalMode::Delete; };
+        let Ok(resolved) = std::fs::canonicalize(parent) else { return SqliteJournalMode::Delete; };
+        let resolved = resolved.to_string_lossy().replace('/', "\\");
+        let value = resolved.strip_prefix("\\\\?\\").unwrap_or(&resolved);
+        if value.as_bytes().get(1) == Some(&b':') && value.as_bytes().get(2) == Some(&b'\\') {
+            let drive: Vec<u16> = std::ffi::OsStr::new(&value[..3]).encode_wide().chain(Some(0)).collect();
+            if matches!(unsafe { GetDriveTypeW(drive.as_ptr()) }, 2 | 3 | 6) { return SqliteJournalMode::Wal; }
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = db_path;
+    SqliteJournalMode::Delete
+}
+
 pub async fn connect_library_sqlite(db_path: &Path) -> Result<Pool<Sqlite>> {
     let options = SqliteConnectOptions::new()
         .filename(db_path)
         .create_if_missing(true)
-        .journal_mode(SqliteJournalMode::Delete)  // safe on SMB/NFS; WAL is not
+        .journal_mode(library_journal_mode(db_path))
+        .pragma("temp_store", "MEMORY")
+        .pragma("cache_size", "-4096")
+        .foreign_keys(false)
         .synchronous(SqliteSynchronous::Normal)
         .busy_timeout(std::time::Duration::from_secs(30)); // 30s for slow NAS writes
 
@@ -54,17 +81,6 @@ pub async fn connect_library_sqlite(db_path: &Path) -> Result<Pool<Sqlite>> {
         .acquire_timeout(std::time::Duration::from_secs(10))
         .connect_with(options)
         .await?;
-
-    // In-memory temp store and 64MB cache in RAM for limited NAS read/write
-    sqlx::query(
-        r#"
-        PRAGMA temp_store = MEMORY;
-        PRAGMA cache_size = -64000;
-        PRAGMA foreign_keys = OFF;
-        "#
-    )
-    .execute(&pool)
-    .await?;
 
     // Execute the per-library schema
     sqlx::query(include_str!("../migrations/002_library_schema.sql"))
@@ -101,6 +117,8 @@ pub async fn connect_library_sqlite(db_path: &Path) -> Result<Pool<Sqlite>> {
         .execute(&pool).await?;
 
     crate::folders::initialize(&pool).await?;
+    crate::preview::initialize(&pool).await?;
+    crate::search_index::initialize(&pool).await?;
     Ok(pool)
 }
 
@@ -163,6 +181,7 @@ impl Database {
             pool: master_pool.clone(), master_pool,
             libraries: Arc::new(RwLock::new(HashMap::new())),
             storage_root, default_storage_root, storage_errors: Vec::new(),
+            preview_wakeup: Arc::new(tokio::sync::Notify::new()),
         };
         let rows: Vec<(String, String, String)> = sqlx::query_as(
             "SELECT id, name, root_paths FROM libraries"
@@ -267,6 +286,7 @@ impl Database {
             catalog_dir,
             scan_lock: Arc::new(tokio::sync::Mutex::new(())),
             scan_processed: Arc::new(AtomicU64::new(0)),
+            scan_full: Arc::new(AtomicBool::new(false)),
             pool: lib_pool,
         };
 
@@ -335,5 +355,16 @@ pub fn make_relative_path(root: &Path, p: &Path) -> String {
         rel.to_string_lossy().replace('\\', "/")
     } else {
         p.to_string_lossy().replace('\\', "/")
+    }
+}
+
+#[cfg(test)]
+mod journal_tests {
+    use super::*;
+    #[test]
+    fn unc_and_extended_unknown_locations_never_enable_wal() {
+        for path in [r"\\nas\share\catalog.sqlite", r"\\?\UNC\nas\share\catalog.sqlite", r"\\?\Volume{unknown}\catalog.sqlite"] {
+            assert!(matches!(library_journal_mode(Path::new(path)), SqliteJournalMode::Delete));
+        }
     }
 }
