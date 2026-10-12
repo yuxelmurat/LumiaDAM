@@ -6,6 +6,7 @@ import type { Asset, ColorLabel, Collection } from '../../types';
 import { IconStar, IconX, IconExternal, IconEye, IconInfo, IconCopy, IconCheck, IconRefresh, IconEdit, IconTrash, IconHeart, IconHeartFilled } from '../Icons';
 import { ConfirmDeleteDialog } from '../ConfirmDeleteDialog';
 import { api } from '../../api';
+import { message } from '@tauri-apps/plugin-dialog';
 import { ThreeViewer } from './ThreeViewer';
 import styles from './DetailPanel.module.css';
 
@@ -261,7 +262,7 @@ export function DetailPanel() {
               try {
                 await api.openWithDefault(asset.filePath);
               } catch (err) {
-                console.error('Failed to open with default app:', err);
+                await message(`Could not open ${asset.fileName}: ${String(err)}`, { title: 'Open file', kind: 'error' }).catch(console.error);
               }
             }}
           >

@@ -116,6 +116,7 @@ export const AssetCard = memo(function AssetCard({
   return (
     <div
       id={`asset-${asset.id}`}
+      data-asset-id={asset.id}
       className={clsx(styles.card, selected && styles.selected)}
       onClick={handleClick}
       draggable
@@ -123,7 +124,6 @@ export const AssetCard = memo(function AssetCard({
       title={asset.filePath}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && handleClick(e as unknown as React.MouseEvent)}
     >
       {/* Thumbnail / preview area */}
       <div className={styles.thumb} data-preview-id={!asset.thumbnailPath ? asset.id : undefined}

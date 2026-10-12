@@ -12,7 +12,9 @@ import { useUIStore } from './store';
 import { useLibraryStore, useTagStore, useCollectionStore, useAssetStore } from './store';
 import { api } from './api';
 import styles from './App.module.css';
-import { EditorPanel, canEditImage } from './components/Editor/EditorPanel';
+import { EditorPanel, type EditorPanelHandle } from './components/Editor/EditorPanel';
+import { canEditImage } from './components/AssetGrid/assetActions';
+import { message } from '@tauri-apps/plugin-dialog';
 import type { Asset } from './types';
 
 function isEditingText(): boolean {
@@ -32,7 +34,11 @@ export default function App() {
   const fetchCollections = useCollectionStore((s) => s.fetchCollections);
   const search = useAssetStore((s) => s.search);
 
-  const [quickLookOpen, setQuickLookOpen] = useState(false);
+  const [quickLookMode, setQuickLookMode] = useState<'hold' | 'persistent' | null>(null);
+  const quickLookModeRef = useRef(quickLookMode);
+  quickLookModeRef.current = quickLookMode;
+  const editorRef = useRef<EditorPanelHandle>(null);
+  const [editorBusy, setEditorBusy] = useState(false);
   const [editorAsset, setEditorAsset] = useState<Asset | null>(null);
   const [workspace, setWorkspace] = useState<'library' | 'editor'>('library');
   const workspaceRef = useRef(workspace);
@@ -75,7 +81,12 @@ export default function App() {
     // Keyboard shortcuts: F5, Space hold for QuickLook, Ctrl+C to copy path
     const handleKeyDown = (e: KeyboardEvent) => {
       // Açık diyalogda kullanılan tuşlar arka plandaki dosyalara işlem yapmaz.
-      if (document.querySelector('dialog[open]')) return;
+      if (document.querySelector('dialog[open], [role="menu"]')) return;
+      if (quickLookModeRef.current) {
+        if (e.key === 'Escape') setQuickLookMode(null);
+        // Önizleme açıkken silme, yeniden adlandırma ve tarama arkadaki dosyalara uygulanmaz.
+        return;
+      }
       if (workspaceRef.current === 'editor') {
         if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r')) e.preventDefault();
         return;
@@ -165,26 +176,26 @@ export default function App() {
         const focusedId = useUIStore.getState().focusedAssetId;
         if (focusedId) {
           e.preventDefault();
-          if (!e.repeat) {
-            setQuickLookOpen(true);
+          if (!e.repeat && quickLookModeRef.current !== 'persistent') {
+            setQuickLookMode('hold');
           }
         }
       }
 
       // Escape closes Quick Look
       if (e.key === 'Escape') {
-        setQuickLookOpen(false);
+        setQuickLookMode(null);
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        setQuickLookOpen(false);
+      if (e.code === 'Space' && quickLookModeRef.current === 'hold') {
+        setQuickLookMode(null);
       }
     };
 
     const handleBlur = () => {
-      setQuickLookOpen(false);
+      if (quickLookModeRef.current === 'hold') setQuickLookMode(null);
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -218,28 +229,41 @@ export default function App() {
     }
   };
 
+  const openEditorAsset = async (asset: Asset | null) => {
+    if (asset && canEditImage(asset) && asset.id !== editorAsset?.id) {
+      // Kütüphaneye dönüş oturumu saklar; farklı dosyaya geçiş önce kayıpsız kapanışı denetler.
+      if (editorAsset && !(await editorRef.current?.confirmClose())) return;
+      setEditorAsset(asset);
+    }
+    setWorkspace('editor');
+    setQuickLookMode(null);
+  };
+  const closeEditor = async () => {
+    if (!(await editorRef.current?.confirmClose())) return;
+    setEditorAsset(null); setEditorBusy(false); setWorkspace('library');
+  };
+  const reportEditorError = (error: unknown) => message(`PhotoEditor could not complete the action: ${String(error)}`,
+    { title: 'PhotoEditor', kind: 'error' }).catch(console.error);
+
   return (
     <div className={styles.layout}>
       <Toolbar
         workspace={workspace}
-        editorAssetName={editorAsset?.fileName}
+        editorBusy={editorBusy}
+        onCloseEditor={editorAsset ? () => { void closeEditor().catch(reportEditorError); } : undefined}
         onOpenLibraries={() => setWorkspace('library')}
-        onOpenPhotoEditor={() => {
-          if (!editorAsset && focusedAsset && canEditImage(focusedAsset)) setEditorAsset(focusedAsset);
-          setWorkspace('editor');
-          setQuickLookOpen(false);
-        }}
+        onOpenPhotoEditor={() => { void openEditorAsset(focusedAsset).catch(reportEditorError); }}
       />
       <div className={styles.body} style={{ display: workspace === 'library' ? undefined : 'none' }}>
         {sidebarOpen && <Sidebar />}
         <main className={styles.main}>
-          <AssetGrid />
+          <AssetGrid onPreviewAsset={() => setQuickLookMode('persistent')} onOpenEditorAsset={openEditorAsset} />
         </main>
         {detailPanelOpen && <DetailPanel />}
       </div>
       <div className={styles.editorWorkspace} style={{ display: workspace === 'editor' ? undefined : 'none' }}>
         {editorAsset ? (
-          <EditorPanel asset={editorAsset} onClose={() => { setEditorAsset(null); setWorkspace('library'); }} />
+          <EditorPanel key={editorAsset.id} ref={editorRef} asset={editorAsset} onBusyChange={setEditorBusy} />
         ) : (
           <div className={styles.editorEmpty}>
             <img src="/brand/lumiadam-mark.png" alt="" />
@@ -249,10 +273,10 @@ export default function App() {
           </div>
         )}
       </div>
-      <StatusBar />
+      {workspace === 'library' && <StatusBar />}
 
       {/* Spacebar Quick Look Modal */}
-      <QuickLookModal asset={focusedAsset} isOpen={quickLookOpen} />
+      <QuickLookModal asset={focusedAsset} isOpen={quickLookMode !== null} persistent={quickLookMode === 'persistent'} onClose={() => setQuickLookMode(null)} />
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDeleteDialog

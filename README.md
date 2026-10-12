@@ -42,7 +42,7 @@ LumiaDAM indexes that structure into a local SQLite catalog. A search for `livin
 | 🔗  | **Related image matching**      | A model or archive can display a smaller sibling image such as `9.jpg` beside `9.zip`. Matching stays inside the same folder and avoids shared legacy thumbnail collisions. |
 | ✨  | **Built-in PhotoEditor**        | Open supported images in the bundled PhotoCraft editor without sending them to a web service. Exports become new cataloged assets beside the source file.                   |
 | 🏷️  | **Library organization**        | Tags, ratings, color labels, favorites, and nested collections help add structure without renaming source files.                                                            |
-| 👁️  | **Quick Look**                  | Hold `Space` for a larger preview and use `Ctrl+C` to copy the selected asset path.                                                                                         |
+| 👁️  | **Quick Look and file opening** | Double-click an image for a larger preview; other files open in their Windows default app. Hold `Space` for Quick Look or use `Enter` to open the focused file.              |
 | 📊  | **Visible background activity** | The status panel reports scan and preview progress, the last scan time, completed/remaining work, and a rescan action.                                                      |
 
 ### Catalog every file, preview what LumiaDAM understands
@@ -101,6 +101,8 @@ The source library remains free of new database and thumbnail folders. You can c
 LumiaDAM packages a pinned build of [PhotoCraft](https://github.com/storytold/photocraft) as a local web editor inside the desktop application.
 
 - Images stay on the computer; the editor does not upload them to a hosted service.
+- Right-click a supported image or `.pcraft` project and choose **Open in PhotoEditor**. Unsupported files keep this action disabled.
+- The editor fills the workspace beneath a compact application bar. **Libraries** keeps the session open; replacing its source or choosing **Close editor** asks before discarding work.
 - Export writes a new `source_edited_<id>` file beside the original.
 - The new file is inserted into the catalog and queued for thumbnail generation without rescanning the entire library.
 - The original file is never overwritten by the LumiaDAM export bridge.

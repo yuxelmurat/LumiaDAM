@@ -1,7 +1,6 @@
-.editor { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.bar { display: flex; align-items: center; gap: 16px; padding: 8px 12px; background: var(--color-bg-elevated); }
-.bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bar button { margin-left: auto; flex-shrink: 0; }
-.message { display: flex; align-items: center; gap: 12px; padding: 6px 12px; font-size: 12px; overflow-wrap: anywhere; }
+.editor { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.message { position: absolute; z-index: 2; bottom: 12px; left: 12px; max-width: min(640px, calc(100% - 24px)); display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-bg-elevated); box-shadow: 0 4px 16px #0005; font-size: 12px; }
+.message span { overflow-wrap: anywhere; min-width: 0; }
+.message button { flex-shrink: 0; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--color-border); background: var(--color-bg-surface); color: var(--color-text-primary); cursor: pointer; }
 .message[role='alert'] { color: #f3ad7c; }
-.frame { flex: 1; width: 100%; min-height: 0; border: 0; background: #262626; }
+.frame { flex: 1; display: block; width: 100%; min-height: 0; border: 0; background: #262626; }

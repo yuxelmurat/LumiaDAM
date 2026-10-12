@@ -16,12 +16,13 @@ import { AppInformation, type InformationPage } from '../AppInformation';
 
 interface ToolbarProps {
   workspace: 'library' | 'editor';
-  editorAssetName?: string;
+  editorBusy?: boolean;
+  onCloseEditor?: () => void;
   onOpenLibraries: () => void;
   onOpenPhotoEditor: () => void;
 }
 
-export function Toolbar({ workspace, editorAssetName, onOpenLibraries, onOpenPhotoEditor }: ToolbarProps) {
+export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries, onOpenPhotoEditor }: ToolbarProps) {
   const { viewMode, gridSize, sidebarOpen, detailPanelOpen,
           setViewMode, setGridSize, toggleSidebar, toggleDetailPanel } = useUIStore();
   const { query, setQuery, search, loading } = useAssetStore();
@@ -100,7 +101,7 @@ export function Toolbar({ workspace, editorAssetName, onOpenLibraries, onOpenPho
 
   return (
     <>
-    <header className={styles.toolbar} data-tauri-drag-region>
+    <header className={clsx(styles.toolbar, workspace === 'editor' && styles.compactToolbar)} data-tauri-drag-region>
       {/* LumiaDAM amblemi ve adı */}
       <div className={styles.brandMenu} ref={menuRef}>
         <button
@@ -113,7 +114,7 @@ export function Toolbar({ workspace, editorAssetName, onOpenLibraries, onOpenPho
           onClick={() => setMenuOpen((open) => !open)}
         >
           <img className={styles.logo} src="/brand/lumiadam-mark.png" alt="" />
-          <span className={styles.appName}>LumiaDAM</span>
+          <span className={styles.appName}>{workspace === 'editor' ? 'PhotoEditor' : 'LumiaDAM'}</span>
           <IconMenu size={17} className={styles.menuIcon} />
         </button>
         {menuOpen && (
@@ -276,9 +277,9 @@ export function Toolbar({ workspace, editorAssetName, onOpenLibraries, onOpenPho
         </button>
       </div>
       </> : (
-        <div className={styles.editorTitle} title={editorAssetName}>
-          <IconImage size={15} />
-          <span>{editorAssetName || 'PhotoEditor'}</span>
+        <div className={styles.editorControls}>
+          <button type="button" onClick={onOpenLibraries} title="Return to Libraries; keep the editor session open"><IconFolder size={14} /> Libraries</button>
+          {onCloseEditor && <button type="button" onClick={onCloseEditor} disabled={editorBusy} title="Close editor"><IconX size={14} /> Close editor</button>}
         </div>
       )}
     </header>
