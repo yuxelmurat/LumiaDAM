@@ -74,6 +74,8 @@ export default function App() {
 
     // Keyboard shortcuts: F5, Space hold for QuickLook, Ctrl+C to copy path
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Açık diyalogda kullanılan tuşlar arka plandaki dosyalara işlem yapmaz.
+      if (document.querySelector('dialog[open]')) return;
       if (workspaceRef.current === 'editor') {
         if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r')) e.preventDefault();
         return;
