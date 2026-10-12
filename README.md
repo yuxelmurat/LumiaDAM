@@ -96,6 +96,8 @@ By default, LumiaDAM stores its catalogs and thumbnails under:
 
 The source library remains free of new database and thumbnail folders. You can choose another catalog location in **Settings**, with a clear warning that a slow disk or network destination will also slow search and preview access. Existing catalogs continue to work when the NAS is offline; opening source files and generating missing previews still require the source to be reachable.
 
+Grid, list, and sidebar thumbnails use the catalog cache. If a source is unavailable, new preview jobs wait and retry automatically; **Status** distinguishes this from active generation. On Windows, installed thumbnail providers supplement the built-in decoders, including HDR/EXR and formats recognized by Explorer. Results are saved locally; generic file icons are not treated as previews. Actual coverage depends on the installed providers and file encoding. See [offline previews](docs/offline-previews.md) for migration and testing details.
+
 [Read the storage and migration guide](docs/storage.md) · [Read the folder search guide](docs/folder-search.md)
 
 ## PhotoEditor

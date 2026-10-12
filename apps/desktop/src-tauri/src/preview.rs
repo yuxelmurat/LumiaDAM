@@ -68,27 +68,25 @@ pub fn is_previewable(ext: &str) -> bool {
                 | "psd"
                 | "psb"
                 | "ai" | "avif" | "mp4" | "mov" | "avi" | "mkv" | "webm" | "m4v"
+                | "pdf" | "heic" | "heif" | "dng" | "cr2" | "cr3" | "nef" | "arw" | "ico"
         )
 }
 
-/// Eski sürümde başarısız kalan HDR/EXR işlerini katalog başına yalnız bir kez yeniden dener.
-pub(crate) async fn retry_failed_hdr_previews(pool: &sqlx::SqlitePool) -> Result<()> {
-    let version: i64 = sqlx::query_scalar("PRAGMA user_version")
-        .fetch_one(pool)
-        .await?;
-    if version >= 1 {
-        return Ok(());
-    }
+/// Windows'ta uzantısı bilinmeyen dosya da görünür olduğunda kayıtlı sağlayıcıya sorulur.
+pub fn can_request_preview(ext: &str) -> bool {
+    is_previewable(ext) || cfg!(windows)
+}
+
+/// Eski bağlantı/codec hatalarını geliştirilmiş üreticiyle katalog başına bir kez yeniden dene.
+pub(crate) async fn retry_failed_previews(pool: &sqlx::SqlitePool) -> Result<()> {
+    let version: i64 = sqlx::query_scalar("PRAGMA user_version").fetch_one(pool).await?;
+    if version >= 2 { return Ok(()); }
     let mut tx = pool.begin().await?;
-    sqlx::query(
-        "UPDATE preview_jobs SET status = 'queued' WHERE status = 'error' AND asset_id IN (SELECT id FROM assets WHERE extension IN ('hdr', 'exr'))"
-    ).execute(&mut *tx).await?;
-    sqlx::query(
-        "UPDATE assets SET preview_status = 'pending' WHERE extension IN ('hdr', 'exr') AND id IN (SELECT asset_id FROM preview_jobs WHERE status = 'queued')"
-    ).execute(&mut *tx).await?;
-    sqlx::query("PRAGMA user_version = 1")
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query("UPDATE preview_jobs SET status='queued',lane='auto',error_message=NULL WHERE status='error'")
+        .execute(&mut *tx).await?;
+    sqlx::query("UPDATE assets SET preview_status='pending' WHERE preview_status='error' AND id IN (SELECT asset_id FROM preview_jobs WHERE status='queued')")
+        .execute(&mut *tx).await?;
+    sqlx::query("PRAGMA user_version=2").execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(())
 }
@@ -373,13 +371,49 @@ async fn generate_image_thumb_async(
     output: PathBuf,
     slots: Arc<tokio::sync::Semaphore>,
 ) -> Result<()> {
-    let permit = slots.acquire_owned().await?;
-    tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        generate_image_thumb(&source, &output)
-    })
-    .await??;
+    // Zaman aşımında çalışan iş kotasını korur; kopmuş NAS sınırsız iş parçacığı oluşturmaz.
+    tokio::time::timeout(std::time::Duration::from_secs(60), async move {
+        let permit = slots.acquire_owned().await?;
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            generate_image_thumb(&source, &output)
+        }).await?
+    }).await??;
     Ok(())
+}
+
+/// Yalnız üretim sırasında çağrılır; katalogda gezinmek kaynak diske dokunmaz.
+async fn source_available(source: PathBuf, root: PathBuf, slots: Arc<tokio::sync::Semaphore>) -> bool {
+    // Birden çok kökü olan eski kütüphanelerde ikinci sürücüyü ilk köke göre değerlendirme.
+    let root = if crate::storage::path_is_within(&source, &root) { root }
+        else { source.ancestors().last().unwrap_or(&source).to_path_buf() };
+    tokio::time::timeout(std::time::Duration::from_secs(8), async move {
+        let Ok(permit) = slots.acquire_owned().await else { return false; };
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            match std::fs::metadata(&source) {
+                Ok(_) => true,
+                // Silinmiş tek dosya diğer dosyaların kuyruğunu bekletmez.
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound =>
+                    std::fs::read_dir(root).is_ok(),
+                Err(_) => false,
+            }
+        }).await.unwrap_or(false)
+    }).await.unwrap_or(false)
+}
+
+/// Bağlantı hatası hazır küçük resmi veya varlığın durumunu bozmaz.
+async fn defer_unavailable(pool: &sqlx::SqlitePool, job: &ClaimedJob) -> Result<()> {
+    sqlx::query("UPDATE preview_jobs SET status='queued',error_message='Source unavailable; waiting to retry' WHERE id=? AND status='processing'")
+        .bind(&job.id).execute(pool).await?;
+    Ok(())
+}
+
+async fn pause_unavailable(lib: &crate::db::LibraryHandle, job: &ClaimedJob) {
+    lib.preview_retry_at.store(chrono::Utc::now().timestamp_millis() + 60_000, std::sync::atomic::Ordering::Relaxed);
+    if let Err(error) = defer_unavailable(&lib.pool, job).await {
+        tracing::error!("Cannot defer unavailable preview: {error}");
+    }
 }
 
 /// Native hata işi ağır şeride bırakır; diğer görüntüler çalışmayı sürdürür.
@@ -428,6 +462,23 @@ fn output_dir(lib: &crate::db::LibraryHandle, job: &ClaimedJob) -> PathBuf {
         .join("thumbs")
         .join(&job.asset_id)
         .join(format!("{}-{}-{}", job.modified_at, job.size_bytes, job.id))
+}
+
+/// Kurulu Windows codec/thumbnail sağlayıcısı kullanılır; takılan sağlayıcı sonlandırılır.
+async fn run_shell(source: &Path, output: &Path) -> Result<(Option<String>, Option<String>)> {
+    #[cfg(windows)]
+    {
+        let thumbnail = output.join("windows_thumb.png");
+        let mut command = Command::new(std::env::current_exe()?);
+        command.arg("--lumiadam-shell-thumbnail").arg(source).arg(&thumbnail)
+            .creation_flags(0x08000000).kill_on_drop(true);
+        let result = tokio::time::timeout(std::time::Duration::from_secs(20), command.output()).await??;
+        anyhow::ensure!(result.status.success(), "Windows thumbnail: {}", String::from_utf8_lossy(&result.stderr));
+        anyhow::ensure!(thumbnail.is_file(), "Windows thumbnail provider returned no image");
+        Ok((Some(thumbnail.to_string_lossy().into_owned()), None))
+    }
+    #[cfg(not(windows))]
+    { let _ = (source, output); Err(anyhow!("Windows thumbnails are unavailable on this platform")) }
 }
 
 async fn run_python(
@@ -493,6 +544,7 @@ async fn run_python(
 pub fn start_preview_worker(state: Arc<AppState>) {
     let prepared = Arc::new(tokio::sync::Mutex::new(std::collections::HashSet::new()));
     let slots = Arc::new(tokio::sync::Semaphore::new(NATIVE_CONCURRENCY));
+    let probe_slots = Arc::new(tokio::sync::Semaphore::new(2));
     let (py_exec, worker_py) = python_paths();
     // İki native şerit ve tek persistent Python şeridi birbirini beklemez.
     for lane in 0..=NATIVE_CONCURRENCY {
@@ -500,6 +552,7 @@ pub fn start_preview_worker(state: Arc<AppState>) {
         let state = state.clone();
         let prepared = prepared.clone();
         let slots = slots.clone();
+        let probe_slots = probe_slots.clone();
         let py_exec = py_exec.clone();
         let worker_py = worker_py.clone();
         tauri::async_runtime::spawn(async move {
@@ -533,12 +586,15 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                                 tracing::error!("Preview recovery failed: {error}");
                                 continue;
                             }
-                            if let Err(error) = retry_failed_hdr_previews(&lib.pool).await {
-                                tracing::error!("HDR/EXR retry failed: {error}");
+                            if let Err(error) = retry_failed_previews(&lib.pool).await {
+                                tracing::error!("Preview retry migration failed: {error}");
                                 continue;
                             }
                             prepared.insert(lib.id.clone());
                         }
+                    }
+                    if lib.preview_retry_at.load(std::sync::atomic::Ordering::Relaxed) > chrono::Utc::now().timestamp_millis() {
+                        continue;
                     }
                     let job = match claim_job(&lib.pool, native).await {
                         Ok(Some(job)) => job,
@@ -553,7 +609,19 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                     let source = PathBuf::from(resolve_path(&lib.root_path, &job.file_path));
                     let output = output_dir(&lib, &job);
                     let started = std::time::Instant::now();
-                    let result = if native {
+                    if !source_available(source.clone(), lib.root_path.clone(), probe_slots.clone()).await {
+                        pause_unavailable(&lib, &job).await;
+                        let _ = state.app_handle.emit("library:activity", json!({"libraryId":lib.id}));
+                        break;
+                    }
+                    lib.preview_retry_at.store(0, std::sync::atomic::Ordering::Relaxed);
+                    // Büyük HDR ortam haritalarında önce Windows'un küçük resim yolunu kullan.
+                    let hdr_shell = if native && cfg!(windows) && matches!(job.extension.to_ascii_lowercase().as_str(), "hdr" | "exr") {
+                        run_shell(&source, &output).await.ok()
+                    } else { None };
+                    let result = if let Some(result) = hdr_shell {
+                        Ok(result)
+                    } else if native {
                         let stem = source
                             .file_stem()
                             .and_then(|value| value.to_str())
@@ -577,7 +645,7 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                         {
                             Ok(()) => Ok((Some(thumb.to_string_lossy().into_owned()), None)),
                             Err(error) => {
-                                tracing::warn!("Native preview failed, using Python: {error}");
+                                tracing::warn!("Native preview failed, using Windows/Python fallback: {error}");
                                 if let Err(error) = defer_to_python(&lib.pool, &job).await {
                                     tracing::error!("Preview fallback enqueue failed: {error}");
                                 }
@@ -586,12 +654,23 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                             }
                         }
                     } else {
-                        run_python(&mut worker, &py_exec, &worker_py, &job, &source, &output).await
+                        match run_shell(&source, &output).await {
+                            Ok(result) => Ok(result),
+                            Err(shell_error) => run_python(&mut worker, &py_exec, &worker_py, &job, &source, &output)
+                                .await.map_err(|error| anyhow!("{shell_error:#}; {error:#}")),
+                        }
                     };
                     let (success, thumb, model) = match result {
                         Ok((thumb, model)) => (true, thumb, model),
                         Err(error) => {
+                            if !source_available(source.clone(), lib.root_path.clone(), probe_slots.clone()).await {
+                                pause_unavailable(&lib, &job).await;
+                                let _ = state.app_handle.emit("library:activity", json!({"libraryId":lib.id}));
+                                break;
+                            }
                             tracing::error!("Preview failed for {}: {error}", source.display());
+                            let _ = sqlx::query("UPDATE preview_jobs SET error_message=? WHERE id=?")
+                                .bind(format!("{error:#}")).bind(&job.id).execute(&lib.pool).await;
                             (false, None, None)
                         }
                     };
@@ -678,6 +757,32 @@ mod image_tests {
 #[cfg(test)]
 mod queue_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn offline_job_remains_pending_and_cached_image_survives() {
+        let pool = pool().await;
+        asset(&pool, "offline", "jpg").await;
+        job(&pool, "offline-job", "offline", "queued", 0).await;
+        sqlx::query("UPDATE assets SET thumbnail_path='local/cache.jpg',preview_status='done'").execute(&pool).await.unwrap();
+        let claimed = claim_job(&pool, true).await.unwrap().unwrap();
+        defer_unavailable(&pool, &claimed).await.unwrap();
+        assert_eq!(counts(&pool).await, (1, 0, 1, 0));
+        let row: (String, String) = sqlx::query_as("SELECT thumbnail_path,preview_status FROM assets").fetch_one(&pool).await.unwrap();
+        assert_eq!(row, ("local/cache.jpg".into(), "done".into()));
+        assert!(claim_job(&pool, true).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn source_probe_distinguishes_missing_file_from_disconnected_folder() {
+        let dir = std::env::temp_dir().join(format!("lumiadam-offline-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let slots = Arc::new(tokio::sync::Semaphore::new(1));
+        // Silinmiş tek dosya kuyruğun tümünü bekletmez; kopmuş kök ise bekletir.
+        assert!(source_available(dir.join("missing.jpg"), dir.clone(), slots.clone()).await);
+        assert!(source_available(dir.join("deleted-folder/missing.jpg"), dir.clone(), slots.clone()).await);
+        std::fs::remove_dir(&dir).unwrap();
+        assert!(!source_available(dir.join("missing.jpg"), dir.clone(), slots).await);
+    }
 
     async fn base_pool() -> sqlx::SqlitePool {
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
@@ -776,7 +881,7 @@ mod queue_tests {
     }
 
     #[tokio::test]
-    async fn requests_preserve_processing_and_completed_jobs_and_only_queue_supported_assets() {
+    async fn requests_preserve_jobs_and_allow_windows_provider_for_unknown_extensions() {
         let pool = pool().await;
         for (id, ext) in [
             ("active", "jpg"),
@@ -798,14 +903,15 @@ mod queue_tests {
         crate::commands::preview::enqueue_previews(&pool, &ids, false)
             .await
             .unwrap();
-        assert_eq!(counts(&pool).await, (4, 1, 2, 1));
+        let shell_candidate = i64::from(cfg!(windows));
+        assert_eq!(counts(&pool).await, (4 + shell_candidate, 1, 2 + shell_candidate, 1));
         crate::commands::preview::enqueue_previews(&pool, &ids, true)
             .await
             .unwrap();
         crate::commands::preview::enqueue_previews(&pool, &ids, true)
             .await
             .unwrap();
-        assert_eq!(counts(&pool).await, (4, 1, 3, 0));
+        assert_eq!(counts(&pool).await, (4 + shell_candidate, 1, 3 + shell_candidate, 0));
         let rows: Vec<(String,String)> = sqlx::query_as("SELECT id,status FROM preview_jobs WHERE asset_id IN ('active','done') ORDER BY asset_id")
             .fetch_all(&pool).await.unwrap();
         assert_eq!(

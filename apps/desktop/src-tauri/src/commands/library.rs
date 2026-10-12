@@ -26,6 +26,7 @@ pub struct LibraryWorkStatus {
     preview_completed: i64,
     preview_pending: i64,
     preview_failed: i64,
+    preview_paused: bool,
 }
 
 #[tauri::command]
@@ -57,6 +58,7 @@ pub async fn get_library_work_status(state: State<'_, Arc<AppState>>) -> Result<
             preview_completed,
             preview_pending,
             preview_failed,
+            preview_paused: preview_pending > 0 && library.preview_retry_at.load(Ordering::Relaxed) > 0,
         });
     }
     tracing::debug!(elapsed_ms = started.elapsed().as_millis(), libraries = statuses.len(), "Library activity snapshot");

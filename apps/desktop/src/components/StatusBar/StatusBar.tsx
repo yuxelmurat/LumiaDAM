@@ -60,8 +60,12 @@ export function StatusBar() {
   const scanning = statuses.some((status) => status.scanning);
   const previewPending = statuses.reduce((sum, status) => sum + status.previewPending, 0);
   const previewFailed = statuses.reduce((sum, status) => sum + status.previewFailed, 0);
-  const label = error || statuses.some((status) => status.lastError) ? 'Needs attention' : scanning || rescanPending ? 'Scanning' :
-    previewPending ? `Preparing previews · ${previewPending.toLocaleString()} left` :
+  const previewPaused = statuses.some((status) => status.previewPaused);
+  const preparing = statuses.some((status) => status.previewPending > 0 && !status.previewPaused);
+  const label = error ? 'Needs attention' : scanning || rescanPending ? 'Scanning' :
+    preparing ? `Preparing previews · ${previewPending.toLocaleString()} left` :
+    previewPaused ? 'Waiting for source · cached previews available' :
+    statuses.some((status) => status.lastError) ? 'Needs attention' :
     previewFailed ? 'Preview errors' : loading ? 'Searching catalog' :
     !statusLoaded ? 'Checking activity' : libraries.length ? 'All tasks complete' : 'No libraries';
 
@@ -98,6 +102,7 @@ export function StatusBar() {
             {status.previewPending > 0 && ` · ${status.previewPending.toLocaleString()} remaining`}
             {status.previewFailed > 0 && ` · ${status.previewFailed.toLocaleString()} failed`}</span>
           <span>Last full scan: {status.lastScanAt ? new Date(status.lastScanAt).toLocaleString() : 'Not recorded yet'}</span>
+          {status.previewPaused && <span>Source unavailable. Cached previews remain available. New previews will retry automatically.</span>}
           {status.lastError && <span className={styles.error}>Library issue: {status.lastError}</span>}
         </div>)}
       </section>}

@@ -6,6 +6,8 @@ pub mod preview;
 pub mod search_index;
 pub mod storage;
 pub mod folders;
+#[cfg(windows)]
+pub mod windows_thumbnail;
 
 use std::sync::Arc;
 use tauri::Manager;

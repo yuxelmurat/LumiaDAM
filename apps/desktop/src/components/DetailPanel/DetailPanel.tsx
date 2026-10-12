@@ -131,25 +131,8 @@ export function DetailPanel() {
     <aside className={styles.panel} id="detail-panel">
       {/* Preview thumbnail */}
       <div className={styles.thumbArea}>
-        {['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'svg'].includes(asset.extension.toLowerCase()) ? (
-          <img src={convertFileSrc(asset.filePath)} alt={asset.fileName} className={styles.thumbImg} />
-        ) : asset.thumbnailPath && !asset.thumbnailPath.endsWith('.glb') ? (
+        {asset.thumbnailPath && !asset.thumbnailPath.endsWith('.glb') ? (
           <img src={convertFileSrc(asset.thumbnailPath)} alt={asset.fileName} className={styles.thumbImg} />
-        ) : (['image', 'texture'].includes(asset.kind) && asset.filePath) ? (
-          <img src={convertFileSrc(asset.filePath)} alt={asset.fileName} className={styles.thumbImg} />
-        ) : (asset.kind === 'video' && asset.filePath) ? (
-          <video
-            src={convertFileSrc(asset.filePath)}
-            preload="metadata"
-            muted
-            playsInline
-            controls
-            className={styles.thumbImg}
-            style={{ objectFit: 'contain' }}
-            onLoadedMetadata={(e) => {
-              try { e.currentTarget.currentTime = 0.1; } catch {}
-            }}
-          />
         ) : (asset.metadata?.preview_model || asset.thumbnailPath?.endsWith('.glb')) ? (
           <ThreeViewer modelPath={(asset.metadata?.preview_model as string) || asset.thumbnailPath!} />
         ) : (
