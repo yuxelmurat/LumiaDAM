@@ -17,6 +17,8 @@ const links = {
     ['LumiaDAM on GitHub', 'https://github.com/yuxelmurat/LumiaDAM'],
     ['OpenDAM', 'https://github.com/LawLaw09/OpenDAM'],
     ['PhotoCraft', 'https://github.com/storytold/photocraft'],
+    ['PdfCraft', 'https://github.com/storytold/pdfcraft'],
+    ['VectorCraft', 'https://github.com/storytold/vectorcraft'],
     ['Buy me a coffee', 'https://buymeacoffee.com/yuxelmurat8'],
   ],
   faq: [['Documentation', 'https://github.com/yuxelmurat/LumiaDAM#readme']],
@@ -53,13 +55,19 @@ export function AppInformation({ page, onClose }: { page: InformationPage; onClo
       <p>Search matches both file names and folder paths. Try kitchen corona to find files in matching folders.
         Type filters still apply. Use Files and Folders to switch between results; open a folder to browse inside.</p>
       <h3>PhotoEditor</h3>
-      <p>Double-click an image for a larger preview; double-click other files to open their default application.
+      <p>Double-click an image for a larger preview, a PDF for PDFEditor, or a vector project for VectorEditor.
+        Other files open their default application.
         Windows file associations determine which installed program opens ZIP, MAX, and other formats.</p>
       <p>Right-click a JPG, PNG, WebP, BMP, TIFF image, or .pcraft project, then choose Open in PhotoEditor.
         You can also select the file and choose PhotoEditor from the LumiaDAM menu.
         The editor fills the workspace. Libraries keeps the session open; Close editor asks before discarding it.
         File &gt; Export saves a new image beside the original and adds it to the library.
         File &gt; Save As saves a layered .pcraft project.</p>
+      <h3>PDFEditor and VectorEditor</h3>
+      <p>PDFEditor uses PdfCraft for PDF reading, comments, forms and page organization.
+        VectorEditor uses VectorCraft for SVG artwork, vector projects and PDF-compatible AI files.
+        Open them from the LumiaDAM menu or the file's right-click menu. Save/export creates a new library asset;
+        wait for the LumiaDAM Saved message before closing. Both engines are in active development.</p>
       <h3>Keyboard shortcuts in Libraries</h3>
       <p>Enter opens the focused file. Esc closes an enlarged preview. Hold Space for Quick Look.
         Ctrl+C copies selected file paths. F toggles favorites.
@@ -74,7 +82,7 @@ export function AppInformation({ page, onClose }: { page: InformationPage; onClo
       <p>Developed by yuxelmurat. LumiaDAM is free and open source under the MIT License.</p>
       <h3>Credits</h3>
       <p>Based on OpenDAM by OpenDAM Contributors. The original MIT copyright notice is preserved.</p>
-      <p>The embedded PhotoEditor is based on PhotoCraft, licensed under MIT OR Apache-2.0.
+      <p>The embedded editors are based on PhotoCraft, PdfCraft and VectorCraft, licensed under MIT OR Apache-2.0.
         Its license and attribution files are included in packaged builds.</p>
     </>}
     {page === 'faq' && <>
@@ -93,8 +101,11 @@ export function AppInformation({ page, onClose }: { page: InformationPage; onClo
       <details><summary>Can I preview HDR and EXR files?</summary>
         <p>HDR and EXR thumbnail previews are supported. This does not mean those formats can be edited in PhotoEditor.</p></details>
       <details><summary>Does editing overwrite my original image?</summary>
-        <p>No. File &gt; Export creates a new image beside the source and adds it to the catalog.
-          Use File &gt; Save As to keep a layered .pcraft project.</p></details>
+        <p>No. The LumiaDAM save/export bridge creates a new file beside the source and adds it to the catalog.
+          This applies to images, PDFs and vectors. Use File &gt; Save As to keep a layered .pcraft or .vectorcraft project.</p></details>
+      <details><summary>Can VectorEditor open every Illustrator file?</summary>
+        <p>No. AI import requires a PDF-compatible file. SVG, PDF and VectorCraft projects are also supported;
+          complex artwork may render differently. PdfCraft and VectorCraft are still in development.</p></details>
       <details><summary>Can I use a disconnected library?</summary>
         <p>Existing catalog entries and cached thumbnails remain available. Opening source files,
           editing, generating missing previews, and rescanning require access to the source drive or NAS.</p></details>

@@ -45,7 +45,7 @@ impl AssetKind {
 
             "mp4" | "mov" | "avi" | "mkv" | "webm" | "m4v" => AssetKind::Video,
 
-            "psd" | "psb" | "ai" | "svg" | "gif" => AssetKind::Image,
+            "psd" | "psb" | "ai" | "svg" | "svgz" | "vectorcraft" | "drawcraft" | "gif" => AssetKind::Image,
 
             "pdf" | "txt" | "md" | "rtf" | "docx" => AssetKind::Document,
 

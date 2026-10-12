@@ -23,7 +23,8 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      ignored: ['**/src-tauri/**'],
+      // Trunk'ın geçici dosyaları Windows'ta derleme sırasında kilitlenebilir.
+      ignored: ['**/src-tauri/**', '**/.stage/**'],
     },
   },
   resolve: {
