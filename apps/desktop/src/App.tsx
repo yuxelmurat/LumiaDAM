@@ -13,7 +13,7 @@ import { useLibraryStore, useTagStore, useCollectionStore, useAssetStore } from 
 import { api } from './api';
 import styles from './App.module.css';
 import { EditorPanel, type EditorPanelHandle } from './components/Editor/EditorPanel';
-import { canEditImage } from './components/AssetGrid/assetActions';
+import { editors, canOpenInEditor, editorForAsset, type EditorId } from './components/Editor/editors';
 import { message } from '@tauri-apps/plugin-dialog';
 import type { Asset } from './types';
 
@@ -40,7 +40,8 @@ export default function App() {
   const editorRef = useRef<EditorPanelHandle>(null);
   const [editorBusy, setEditorBusy] = useState(false);
   const [editorAsset, setEditorAsset] = useState<Asset | null>(null);
-  const [workspace, setWorkspace] = useState<'library' | 'editor'>('library');
+  const [editorKind, setEditorKind] = useState<EditorId>('photo');
+  const [workspace, setWorkspace] = useState<'library' | EditorId>('library');
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
   const [copyToast, setCopyToast] = useState<string | null>(null);
@@ -87,7 +88,7 @@ export default function App() {
         // Önizleme açıkken silme, yeniden adlandırma ve tarama arkadaki dosyalara uygulanmaz.
         return;
       }
-      if (workspaceRef.current === 'editor') {
+      if (workspaceRef.current !== 'library') {
         if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r')) e.preventDefault();
         return;
       }
@@ -229,30 +230,31 @@ export default function App() {
     }
   };
 
-  const openEditorAsset = async (asset: Asset | null) => {
-    if (asset && canEditImage(asset) && asset.id !== editorAsset?.id) {
+  const openEditorAsset = async (asset: Asset | null, editor = editorForAsset(asset) ?? 'photo') => {
+    if (asset && canOpenInEditor(asset, editor) && (asset.id !== editorAsset?.id || editor !== editorKind)) {
       // Kütüphaneye dönüş oturumu saklar; farklı dosyaya geçiş önce kayıpsız kapanışı denetler.
       if (editorAsset && !(await editorRef.current?.confirmClose())) return;
       setEditorAsset(asset);
+      setEditorKind(editor);
     }
-    setWorkspace('editor');
+    setWorkspace(editor);
     setQuickLookMode(null);
   };
   const closeEditor = async () => {
     if (!(await editorRef.current?.confirmClose())) return;
     setEditorAsset(null); setEditorBusy(false); setWorkspace('library');
   };
-  const reportEditorError = (error: unknown) => message(`PhotoEditor could not complete the action: ${String(error)}`,
-    { title: 'PhotoEditor', kind: 'error' }).catch(console.error);
+  const reportEditorError = (error: unknown) => message(`The editor could not complete the action: ${String(error)}`,
+    { title: 'LumiaDAM editor', kind: 'error' }).catch(console.error);
 
   return (
     <div className={styles.layout}>
       <Toolbar
         workspace={workspace}
         editorBusy={editorBusy}
-        onCloseEditor={editorAsset ? () => { void closeEditor().catch(reportEditorError); } : undefined}
+        onCloseEditor={editorAsset && workspace === editorKind ? () => { void closeEditor().catch(reportEditorError); } : undefined}
         onOpenLibraries={() => setWorkspace('library')}
-        onOpenPhotoEditor={() => { void openEditorAsset(focusedAsset).catch(reportEditorError); }}
+        onOpenEditor={editor => { void openEditorAsset(focusedAsset, editor).catch(reportEditorError); }}
       />
       <div className={styles.body} style={{ display: workspace === 'library' ? undefined : 'none' }}>
         {sidebarOpen && <Sidebar />}
@@ -261,14 +263,15 @@ export default function App() {
         </main>
         {detailPanelOpen && <DetailPanel />}
       </div>
-      <div className={styles.editorWorkspace} style={{ display: workspace === 'editor' ? undefined : 'none' }}>
-        {editorAsset ? (
-          <EditorPanel key={editorAsset.id} ref={editorRef} asset={editorAsset} onBusyChange={setEditorBusy} />
-        ) : (
+      <div className={styles.editorWorkspace} style={{ display: workspace !== 'library' ? undefined : 'none' }}>
+        <div style={{ height: '100%', display: editorAsset && workspace === editorKind ? undefined : 'none' }}>
+          {editorAsset && <EditorPanel key={`${editorKind}:${editorAsset.id}`} ref={editorRef} asset={editorAsset} editor={editorKind} onBusyChange={setEditorBusy} />}
+        </div>
+        {workspace !== 'library' && (!editorAsset || workspace !== editorKind) && (
           <div className={styles.editorEmpty}>
             <img src="/brand/lumiadam-mark.png" alt="" />
-            <h2>PhotoEditor</h2>
-            <p>Select a JPG, PNG, WebP, BMP, or TIFF image in Libraries, then open PhotoEditor.</p>
+            <h2>{editors[workspace].title}</h2>
+            <p>{editors[workspace].hint}</p>
             <button type="button" onClick={() => setWorkspace('library')}>Open Libraries</button>
           </div>
         )}

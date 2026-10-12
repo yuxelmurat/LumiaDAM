@@ -13,16 +13,17 @@ import styles from './Toolbar.module.css';
 import clsx from 'clsx';
 import { StorageSettings } from '../StorageSettings';
 import { AppInformation, type InformationPage } from '../AppInformation';
+import { editors, type EditorId } from '../Editor/editors';
 
 interface ToolbarProps {
-  workspace: 'library' | 'editor';
+  workspace: 'library' | EditorId;
   editorBusy?: boolean;
   onCloseEditor?: () => void;
   onOpenLibraries: () => void;
-  onOpenPhotoEditor: () => void;
+  onOpenEditor: (editor: EditorId) => void;
 }
 
-export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries, onOpenPhotoEditor }: ToolbarProps) {
+export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries, onOpenEditor }: ToolbarProps) {
   const { viewMode, gridSize, sidebarOpen, detailPanelOpen,
           setViewMode, setGridSize, toggleSidebar, toggleDetailPanel } = useUIStore();
   const { query, setQuery, search, loading } = useAssetStore();
@@ -101,7 +102,7 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
 
   return (
     <>
-    <header className={clsx(styles.toolbar, workspace === 'editor' && styles.compactToolbar)} data-tauri-drag-region>
+    <header className={clsx(styles.toolbar, workspace !== 'library' && styles.compactToolbar)} data-tauri-drag-region>
       {/* LumiaDAM amblemi ve adı */}
       <div className={styles.brandMenu} ref={menuRef}>
         <button
@@ -114,7 +115,7 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
           onClick={() => setMenuOpen((open) => !open)}
         >
           <img className={styles.logo} src="/brand/lumiadam-mark.png" alt="" />
-          <span className={styles.appName}>{workspace === 'editor' ? 'PhotoEditor' : 'LumiaDAM'}</span>
+          <span className={styles.appName}>{workspace === 'library' ? 'LumiaDAM' : editors[workspace].title}</span>
           <IconMenu size={17} className={styles.menuIcon} />
         </button>
         {menuOpen && (
@@ -122,9 +123,10 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
             <button type="button" role="menuitem" className={workspace === 'library' ? styles.menuItemActive : undefined} onClick={() => choose(onOpenLibraries)}>
               <IconFolder size={17} /><span>Libraries</span>
             </button>
-            <button type="button" role="menuitem" className={workspace === 'editor' ? styles.menuItemActive : undefined} onClick={() => choose(onOpenPhotoEditor)}>
-              <IconImage size={17} /><span>PhotoEditor</span>
-            </button>
+            {(Object.keys(editors) as EditorId[]).map(editor => <button key={editor} type="button" role="menuitem"
+              className={workspace === editor ? styles.menuItemActive : undefined} onClick={() => choose(() => onOpenEditor(editor))}>
+              {editor === 'pdf' ? <IconFileText size={17} /> : <IconImage size={17} />}<span>{editors[editor].title}</span>
+            </button>)}
             <div className={styles.menuDivider} />
             <button type="button" role="menuitem" onClick={() => choose(() => setStorageOpen(true))}>
               <IconSettings size={17} /><span>Settings</span>

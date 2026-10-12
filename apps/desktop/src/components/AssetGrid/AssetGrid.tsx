@@ -3,7 +3,8 @@ import clsx from 'clsx';
 import { open } from '@tauri-apps/plugin-dialog';
 import { api } from '../../api';
 import { useUIStore, useAssetStore, useLibraryStore } from '../../store';
-import { activateAsset, canEditImage } from './assetActions';
+import { activateAsset } from './assetActions';
+import { editors, canOpenInEditor, type EditorId } from '../Editor/editors';
 import { observeVisiblePreviews } from './visiblePreviews';
 import { AssetCard } from './AssetCard';
 import { AssetListRow } from './AssetListRow';
@@ -20,7 +21,7 @@ const GRID_COLS: Record<'sm' | 'md' | 'lg', number> = {
 
 export function AssetGrid({ onPreviewAsset, onOpenEditorAsset }: {
   onPreviewAsset: (asset: Asset) => void;
-  onOpenEditorAsset: (asset: Asset) => void | Promise<void>;
+  onOpenEditorAsset: (asset: Asset, editor?: EditorId) => void | Promise<void>;
 }) {
   const { viewMode, gridSize, selectedAssetIds, selectAsset, clearSelection } = useUIStore();
   const { assets, folders, folderTotal, loading, total, searchError, folderLoading, folderError, searchFolders, search, page, pageSize, setPage, query } = useAssetStore();
@@ -96,12 +97,12 @@ export function AssetGrid({ onPreviewAsset, onOpenEditorAsset }: {
           buttons[next]?.focus();
         }}>
         <button type="button" role="menuitem" onClick={() => void openAsset(contextMenu.asset)}>Open</button>
-        <button type="button" role="menuitem" disabled={!canEditImage(contextMenu.asset)}
+        {(Object.keys(editors) as EditorId[]).map(editor => <button key={editor} type="button" role="menuitem" disabled={!canOpenInEditor(contextMenu.asset, editor)}
           onClick={() => {
             const asset = contextMenu.asset; setContextMenu(null); setOpenError(null);
-            void Promise.resolve().then(() => onOpenEditorAsset(asset))
+            void Promise.resolve().then(() => onOpenEditorAsset(asset, editor))
               .catch(error => setOpenError(`Could not edit ${asset.fileName}: ${String(error)}`));
-          }}>Open in PhotoEditor</button>
+          }}>Open in {editors[editor].title}</button>)}
         <button type="button" role="menuitem" onClick={() => {
           const asset = contextMenu.asset; setContextMenu(null);
           void api.revealInExplorer(asset.filePath).catch(error => setOpenError(`Could not show ${asset.fileName}: ${String(error)}`));
@@ -166,7 +167,7 @@ export function AssetGrid({ onPreviewAsset, onOpenEditorAsset }: {
           else selection.focusAsset(asset.id);
           const rect = (event.target as Element).closest('[data-asset-id]')!.getBoundingClientRect();
           setContextMenu({ asset, x: Math.max(8, Math.min(event.clientX || rect.left + 12, window.innerWidth - 228)),
-            y: Math.max(8, Math.min(event.clientY || rect.top + 12, window.innerHeight - 140)) });
+            y: Math.max(8, Math.min(event.clientY || rect.top + 12, window.innerHeight - 210)) });
         }}>
         {total === 0 ? <p className={styles.emptyText}>No matching files. Check the Folders tab or adjust your filters.</p> : viewMode === 'grid' ? (
           <div

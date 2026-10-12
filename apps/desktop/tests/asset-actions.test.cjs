@@ -7,29 +7,32 @@ const ts = require('typescript');
 
 function setup(openWithDefault = async () => {}) {
   const exports = {};
+  const registry = {};
+  runInNewContext(ts.transpileModule(readFileSync(join(__dirname, '../src/components/Editor/editors.ts'), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports: registry });
   const source = readFileSync(join(__dirname, '../src/components/AssetGrid/assetActions.ts'), 'utf8');
   runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
-    { exports, require: () => ({ api: { openWithDefault } }) });
-  return exports;
+    { exports, require: path => path.includes('editors') ? registry : ({ api: { openWithDefault } }) });
+  return { ...exports, canOpenInEditor: registry.canOpenInEditor };
 }
 
-test('Görseller büyütülür; ZIP/MAX/PDF Windows ilişkilendirmesine gönderilir', async () => {
+test('Görseller büyütülür; projeler dahili editöre, ZIP/MAX Windows uygulamasına gider', async () => {
   const external = [], preview = [], editor = [];
   const { activateAsset } = setup(async path => external.push(path));
-  for (const extension of ['JPEG', 'png', 'hdr', 'exr', 'avif', 'tga', 'psd', 'zip', 'max', 'pdf', 'pcraft']) {
+  for (const extension of ['JPEG', 'png', 'hdr', 'exr', 'avif', 'tga', 'psd', 'zip', 'max', 'pdf', 'pcraft', 'vectorcraft', 'drawcraft', 'svgz']) {
     const asset = { id: extension, extension, filePath: `A:/Arşiv & models/9.${extension}` };
-    await activateAsset(asset, a => preview.push(a.id), a => editor.push(a.id));
+    await activateAsset(asset, a => preview.push(a.id), (a, kind) => editor.push([a.id, kind]));
   }
   assert.deepEqual(preview, ['JPEG', 'png', 'hdr', 'exr', 'avif', 'tga', 'psd']);
-  assert.deepEqual(external, ['A:/Arşiv & models/9.zip', 'A:/Arşiv & models/9.max', 'A:/Arşiv & models/9.pdf']);
-  assert.deepEqual(editor, ['pcraft']);
+  assert.deepEqual(external, ['A:/Arşiv & models/9.zip', 'A:/Arşiv & models/9.max']);
+  assert.deepEqual(editor, [['pdf','pdf'],['pcraft','photo'],['vectorcraft','vector'],['drawcraft','vector'],['svgz','vector']]);
 });
 
 test('PhotoEditor yalnız desteklenen görsel ve proje formatlarında etkin olur', () => {
-  const { canEditImage } = setup();
-  for (const extension of ['JPEG', 'png', 'webp', 'bmp', 'tif', 'tiff', 'pcraft']) assert.equal(canEditImage({ extension }), true);
-  for (const extension of ['zip', 'max', 'pdf', 'hdr', 'exr', 'svg']) assert.equal(canEditImage({ extension }), false);
-  assert.equal(canEditImage(null), false);
+  const { canOpenInEditor } = setup();
+  for (const extension of ['JPEG', 'png', 'webp', 'bmp', 'tif', 'tiff', 'pcraft']) assert.equal(canOpenInEditor({ extension }, 'photo'), true);
+  for (const extension of ['zip', 'max', 'pdf', 'hdr', 'exr', 'svg']) assert.equal(canOpenInEditor({ extension }, 'photo'), false);
+  assert.equal(canOpenInEditor(null, 'photo'), false);
 });
 
 test('Windows açma hatası gizlenmez; arayüzün gösterebilmesi için döner', async () => {

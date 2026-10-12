@@ -41,8 +41,10 @@ LumiaDAM indexes that structure into a local SQLite catalog. A search for `livin
 | 🖼️  | **Visual previews**             | Standard images plus native HDR and EXR thumbnails. Supported 3D/CAD files can use embedded previews or the optional preview worker when available.                         |
 | 🔗  | **Related image matching**      | A model or archive can display a smaller sibling image such as `9.jpg` beside `9.zip`. Matching stays inside the same folder and avoids shared legacy thumbnail collisions. |
 | ✨  | **Built-in PhotoEditor**        | Open supported images in the bundled PhotoCraft editor without sending them to a web service. Exports become new cataloged assets beside the source file.                   |
+| 📄  | **Built-in PDFEditor**          | Open PDFs in the local PdfCraft workspace to read, annotate, fill forms and organize pages. Saves create a new PDF beside the source.                                       |
+| ✒️  | **Built-in VectorEditor**       | Use VectorCraft for SVG art, native vector projects, PDF-compatible AI files and supported images. Exports return to the library as new assets.                            |
 | 🏷️  | **Library organization**        | Tags, ratings, color labels, favorites, and nested collections help add structure without renaming source files.                                                            |
-| 👁️  | **Quick Look and file opening** | Double-click an image for a larger preview; other files open in their Windows default app. Hold `Space` for Quick Look or use `Enter` to open the focused file.              |
+| 👁️  | **Quick Look and file opening** | Double-click an image for a larger preview, a PDF for PDFEditor, or a vector project for VectorEditor. Other files open in their Windows default app.                        |
 | 📊  | **Visible background activity** | The status panel reports scan and preview progress, the last scan time, completed/remaining work, and a rescan action.                                                      |
 
 ### Catalog every file, preview what LumiaDAM understands
@@ -77,7 +79,7 @@ flowchart LR
 4. Browse the matching folder or refine the result with type and metadata filters.
 5. Open an image in **PhotoEditor**, export a new version, and keep the original untouched.
 
-The application menu beside the LumiaDAM logo contains **Libraries**, **PhotoEditor**, **Settings**, **Help**, **About**, **FAQ**, and **Exit**. Help includes a quick start guide and keyboard shortcuts; FAQ explains catalog storage, search, previews, and editing. About shows the app version, license credits, project links, and a support link. Exit uses the normal window close request so an open editor can warn about unsaved work. Switching back to Libraries does not discard the current editor session.
+The application menu beside the LumiaDAM logo contains **Libraries**, **PhotoEditor**, **PDFEditor**, **VectorEditor**, **Settings**, **Help**, **About**, **FAQ**, and **Exit**. Help includes a quick start guide and keyboard shortcuts; FAQ explains catalog storage, search, previews, and editing. About shows the app version, license credits, project links, and a support link. Exit uses the normal window close request so an open editor can warn about unsaved work. Switching back to Libraries does not discard the current editor session.
 
 ## Storage designed for real archives
 
@@ -112,9 +114,24 @@ The integration currently supports one editor session and a 256 MB source/output
 
 [PhotoEditor usage, limits, and upstream update process](docs/PHOTOCRAFT.md)
 
+## PDF and vector workspaces
+
+**PDFEditor** and **VectorEditor** use pinned local builds of [PdfCraft](https://github.com/storytold/pdfcraft) and [VectorCraft](https://github.com/storytold/vectorcraft).
+Right-click a compatible library file to choose an editor; a PDF can also be opened by double-clicking.
+Both use the same full-window workspace and original-preserving save bridge as PhotoEditor.
+Only one editor session is active at a time; opening a different source or editor asks before discarding the current session.
+
+- **PDFEditor source/output:** PDF. Save and Save As create a new cataloged PDF; wait for LumiaDAM's **Saved** message.
+- **VectorEditor sources:** SVG/SVGZ, `.vectorcraft`/legacy `.drawcraft`, PDF-compatible AI, PDF and supported bitmap images.
+- **VectorEditor outputs:** SVG/SVGZ, PDF, `.vectorcraft`, JPG/JPEG, PNG and WebP.
+- Both upstream projects are in active development. AI import is limited to PDF-compatible files; full Illustrator or Acrobat parity is not promised.
+- Supplemental PDF conversions/downloads outside the LumiaDAM bridge and optional OCR models are outside this integration's verified scope.
+
+[Local editor builds, licensing and update process](docs/LOCAL-EDITORS.md)
+
 ## Project status
 
-LumiaDAM is in active **v0.1.0 development**. The current codebase contains the Windows application, local catalog architecture, path-aware folder search, background status reporting, related previews, HDR/EXR thumbnails, and embedded PhotoEditor integration.
+LumiaDAM is in active **v0.1.0 development**. The current codebase contains the Windows application, local catalog architecture, path-aware folder search, background status reporting, related previews, HDR/EXR thumbnails, and three embedded editors.
 
 There is no public signed installer release yet. The Releases page will become the download source after the first tested package is published. Until then, build LumiaDAM from source and evaluate it with backed-up sample libraries.
 

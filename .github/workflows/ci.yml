@@ -47,7 +47,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-      - name: Install PhotoCraft web builder
+      - name: Install local editor web builder
         run: cargo install trunk --version 0.21.14 --locked
       - name: Test frontend behavior
         run: pnpm --filter @lumiadam/desktop test

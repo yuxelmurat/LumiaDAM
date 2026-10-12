@@ -23,7 +23,29 @@ fn supported(extension: &str) -> bool {
     )
 }
 
-async fn source(state: &AppState, id: &str) -> Result<(LibraryHandle, PathBuf)> {
+#[derive(Clone, Copy)]
+enum Editor { Photo, Pdf, Vector }
+impl Editor {
+    fn parse(value: Option<&str>) -> Result<Self> {
+        match value.unwrap_or("photo") {
+            "photo" => Ok(Self::Photo), "pdf" => Ok(Self::Pdf), "vector" => Ok(Self::Vector),
+            _ => Err("Unknown editor".into()),
+        }
+    }
+    fn name(self) -> &'static str {
+        match self { Self::Photo => "PhotoCraft", Self::Pdf => "PdfCraft", Self::Vector => "VectorCraft" }
+    }
+    fn supports(self, extension: &str, output: bool) -> bool {
+        match self {
+            Self::Photo => supported(extension),
+            Self::Pdf => extension == "pdf",
+            Self::Vector => matches!(extension, "svg" | "svgz" | "pdf" | "vectorcraft" | "jpg" | "jpeg" | "png" | "webp") ||
+                (!output && matches!(extension, "ai" | "drawcraft" | "bmp" | "tif" | "tiff" | "gif")),
+        }
+    }
+}
+
+async fn source(state: &AppState, id: &str, editor: Editor) -> Result<(LibraryHandle, PathBuf)> {
     for library in state.db.get_all_libraries().await {
         let path: Option<(String,)> = sqlx::query_as("SELECT file_path FROM assets WHERE id = ?")
             .bind(id)
@@ -45,7 +67,7 @@ async fn source(state: &AppState, id: &str) -> Result<(LibraryHandle, PathBuf)> 
                 .and_then(|s| s.to_str())
                 .unwrap_or("")
                 .to_ascii_lowercase();
-            if !supported(&extension) {
+            if !editor.supports(&extension, false) {
                 return Err("This format is not enabled in the editor yet".into());
             }
             return Ok((library, path));
@@ -55,8 +77,8 @@ async fn source(state: &AppState, id: &str) -> Result<(LibraryHandle, PathBuf)> 
 }
 
 #[tauri::command]
-pub async fn read_editor_asset(id: String, state: State<'_, Arc<AppState>>) -> Result<Response> {
-    let (_, path) = source(&state, &id).await?;
+pub async fn read_editor_asset(id: String, editor: Option<String>, state: State<'_, Arc<AppState>>) -> Result<Response> {
+    let (_, path) = source(&state, &id, Editor::parse(editor.as_deref())?).await?;
     let bytes = tokio::task::spawn_blocking(move || {
         use std::io::Read;
         let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
@@ -132,8 +154,9 @@ pub async fn save_editor_export(
         .map_err(|e| e.to_string())?
         .to_string();
     let extension = header(&request, "x-export-extension")?.to_ascii_lowercase();
-    if !supported(&extension) {
-        return Err("Export as JPG, PNG, WebP, BMP, TIFF or PhotoCraft project".into());
+    let editor = Editor::parse(request.headers().get("x-editor-kind").and_then(|v| v.to_str().ok()))?;
+    if !editor.supports(&extension, true) {
+        return Err(format!("This output format is not enabled for {}", editor.name()));
     }
     let bytes = match request.body() {
         InvokeBody::Raw(bytes) => bytes,
@@ -142,7 +165,7 @@ pub async fn save_editor_export(
     if bytes.is_empty() || bytes.len() > MAX_BYTES {
         return Err("Export must be between 1 byte and 256 MB".into());
     }
-    let (library, source_path) = source(&state, &source_id).await?;
+    let (library, source_path) = source(&state, &source_id, editor).await?;
     let _scan = library.scan_lock.lock().await;
     let stem = source_path
         .file_stem()
@@ -163,7 +186,7 @@ pub async fn save_editor_export(
         .map(|t| t.as_millis() as i64)
         .unwrap_or(now);
     let relative = make_relative_path(&library.root_path, &path);
-    let metadata = serde_json::json!({"source_asset_id": source_id, "editor": "PhotoCraft", "editor_export_id": export_id}).to_string();
+    let metadata = serde_json::json!({"source_asset_id": source_id, "editor": editor.name(), "editor_export_id": export_id}).to_string();
     // Kaydı ve küçük resim işini tek işlemde ekler; hata olursa çıktı diskte korunur ve Retry ile tamamlanır.
     let index = async {
         let mut tx = library.pool.begin().await?;
@@ -171,7 +194,7 @@ pub async fn save_editor_export(
             .bind(&export_id).bind(&relative).bind(&file_name).bind(&extension).bind(AssetKind::from_extension(&extension).as_str())
             .bind(bytes.len() as i64).bind(modified).bind(now).bind(metadata).execute(&mut *tx).await?;
         let (asset_id,): (String,) = sqlx::query_as("SELECT id FROM assets WHERE file_path=?").bind(&relative).fetch_one(&mut *tx).await?;
-        if extension != "pcraft" {
+        if !matches!(extension.as_str(), "pcraft" | "vectorcraft" | "svgz") {
             sqlx::query("INSERT INTO preview_jobs (id,asset_id,status,created_at) VALUES (?,?,'pending',?) ON CONFLICT(id) DO NOTHING")
                 .bind(&export_id).bind(&asset_id).bind(now).execute(&mut *tx).await?;
         } else {
@@ -208,5 +231,22 @@ mod tests {
         for extension in ["jpg", "png", "pcraft", "tiff"] {
             assert!(supported(extension));
         }
+    }
+    #[test]
+    fn editor_formats_are_scoped_and_unknown_editors_are_rejected() {
+        assert!(Editor::parse(Some("unknown")).is_err());
+        assert!(Editor::Pdf.supports("pdf", false));
+        assert!(!Editor::Pdf.supports("jpg", false));
+        assert!(Editor::Vector.supports("svg", false));
+        assert!(Editor::Vector.supports("ai", false));
+        assert!(Editor::Vector.supports("vectorcraft", true));
+        assert!(!Editor::Vector.supports("ai", true));
+        for editor in [Editor::Photo, Editor::Pdf, Editor::Vector] {
+            for ext in ["exe", "../pdf", "zip", "", "png/../../file"] {
+                assert!(!editor.supports(ext, false));
+                assert!(!editor.supports(ext, true));
+            }
+        }
+        assert!(Editor::parse(None).unwrap().supports("png", false));
     }
 }

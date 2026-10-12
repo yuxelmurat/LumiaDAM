@@ -2,6 +2,8 @@
 node_modules/
 .cache/
 apps/desktop/public/photocraft/
+apps/desktop/public/pdfcraft/
+apps/desktop/public/vectorcraft/
 .pnpm-store/
 
 # ── Build Artifacts ────────────────────────────────────────────────────────

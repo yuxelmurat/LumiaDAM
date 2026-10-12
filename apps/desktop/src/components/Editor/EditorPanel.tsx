@@ -4,29 +4,30 @@ import { confirm } from '@tauri-apps/plugin-dialog';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { Asset } from '../../types';
 import styles from './EditorPanel.module.css';
+import { editors, type EditorId } from './editors';
 
 export interface EditorPanelHandle { confirmClose: () => Promise<boolean> }
-const CHANNEL = 'lumiadam-editor-v1';
 interface PendingExport { id: string; name: string; bytes: ArrayBuffer }
 
-export const EditorPanel = forwardRef<EditorPanelHandle, { asset: Asset; onBusyChange?: (busy: boolean) => void }>(
-function EditorPanel({ asset, onBusyChange }, ref) {
+export const EditorPanel = forwardRef<EditorPanelHandle, { asset: Asset; editor: EditorId; onBusyChange?: (busy: boolean) => void }>(
+function EditorPanel({ asset, editor, onBusyChange }, ref) {
+  const config = editors[editor];
   const frame = useRef<HTMLIFrameElement>(null);
   const pending = useRef<PendingExport | null>(null);
   const saving = useRef(false);
-  const [status, setStatus] = useState('Loading PhotoCraft…');
+  const [status, setStatus] = useState(`Loading ${config.engine}…`);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [retry, setRetry] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [opened, setOpened] = useState(false);
 
-  const send = (data: object, transfer: Transferable[] = []) => frame.current?.contentWindow?.postMessage({ channel: CHANNEL, ...data }, location.origin, transfer);
+  const send = (data: object, transfer: Transferable[] = []) => frame.current?.contentWindow?.postMessage({ channel: config.channel, ...data }, location.origin, transfer);
   const allowClose = async () => {
     if (saving.current) return false;
     const approved = await confirm(
-    'Close this editor session? Unsaved changes and exports that have not finished will be lost. Use File > Save As to keep a layered project, or File > Export to save an image.',
-    { title: 'Close PhotoCraft', kind: 'warning', okLabel: 'Close editor', cancelLabel: 'Keep editing' },
+    'Close this editor session? Unsaved changes and exports that have not finished will be lost. Save or export your work and wait for LumiaDAM to confirm it has been saved.',
+    { title: `Close ${config.engine}`, kind: 'warning', okLabel: 'Close editor', cancelLabel: 'Keep editing' },
     );
     return approved && !saving.current;
   };
@@ -45,6 +46,7 @@ function EditorPanel({ asset, onBusyChange }, ref) {
       const extension = item.name.split('.').at(-1)?.toLowerCase() ?? '';
       const result = await invoke<{ filePath: string }>('save_editor_export', item.bytes, { headers: {
         'x-source-asset': asset.id, 'x-export-id': item.id, 'x-export-extension': extension,
+        'x-editor-kind': editor,
       } });
       pending.current = null;
       setStatus(`Saved: ${result.filePath}`);
@@ -64,10 +66,10 @@ function EditorPanel({ asset, onBusyChange }, ref) {
     let loading = false;
     let ready = false;
     const timer = window.setTimeout(() => {
-      if (!ready && !disposed) setError('PhotoCraft did not start. Check the local editor bundle and WebGL2/WebGPU support, then retry loading.');
+      if (!ready && !disposed) setError(`${config.engine} did not start. Check the local editor bundle and WebGL2/WebGPU support, then retry loading.`);
     }, 60000);
     const receive = async (event: MessageEvent) => {
-      if (event.source !== frame.current?.contentWindow || event.origin !== location.origin || event.data?.channel !== CHANNEL) return;
+      if (event.source !== frame.current?.contentWindow || event.origin !== location.origin || event.data?.channel !== config.channel) return;
       const data = event.data;
       if (data.type === 'notice' && typeof data.message === 'string' && !pending.current) setStatus(data.message);
       if (data.type === 'ready' && !loading) {
@@ -77,9 +79,9 @@ function EditorPanel({ asset, onBusyChange }, ref) {
         setError(null);
         setStatus(`Opening ${asset.fileName}…`);
         try {
-          const bytes = await invoke<ArrayBuffer>('read_editor_asset', { id: asset.id });
+          const bytes = await invoke<ArrayBuffer>('read_editor_asset', { id: asset.id, editor });
           if (!disposed) send({ type: 'open', name: asset.fileName, bytes }, [bytes]);
-        } catch (e) { if (!disposed) { setError(String(e)); setStatus('Could not open the source image.'); } }
+        } catch (e) { if (!disposed) { setError(String(e)); setStatus('Could not open the source file.'); } }
       }
       if (data.type === 'opened') {
         setOpened(true);
@@ -92,7 +94,7 @@ function EditorPanel({ asset, onBusyChange }, ref) {
     };
     window.addEventListener('message', receive);
     return () => { disposed = true; clearTimeout(timer); window.removeEventListener('message', receive); };
-  }, [asset.id, attempt]);
+  }, [asset.id, editor, attempt]);
 
   useEffect(() => {
     let prompting = false;
@@ -108,13 +110,13 @@ function EditorPanel({ asset, onBusyChange }, ref) {
     return () => { window.removeEventListener('beforeunload', beforeUnload); unlisten.then((fn) => fn()).catch(console.error); };
   }, []);
 
-  return <section className={styles.editor} aria-label="PhotoCraft image editor">
+  return <section className={styles.editor} aria-label={`${config.engine} editor`}>
     {(error || status) && <div className={styles.message} role={error ? 'alert' : 'status'}>
       <span>{error || status}</span>
       {retry && <button disabled={busy} onClick={() => pending.current && void save(pending.current)}>Retry saving</button>}
-      {error && !opened && !busy && <button onClick={() => { setError(null); setOpened(false); setStatus('Loading PhotoCraft…'); setAttempt((n) => n + 1); }}>Retry loading</button>}
+      {error && !opened && !busy && <button onClick={() => { setError(null); setOpened(false); setStatus(`Loading ${config.engine}…`); setAttempt((n) => n + 1); }}>Retry loading</button>}
     </div>}
-    <iframe key={attempt} ref={frame} title="PhotoCraft" src="/photocraft/index.html" className={styles.frame}
+    <iframe key={attempt} ref={frame} title={config.engine} src={config.path} className={styles.frame}
       onLoad={() => send({ type: 'ping' })} />
   </section>;
 });
