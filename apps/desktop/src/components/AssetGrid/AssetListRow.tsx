@@ -58,6 +58,7 @@ export const AssetListRow = memo(function AssetListRow({
   return (
     <div
       id={`asset-row-${asset.id}`}
+      data-asset-id={asset.id}
       className={clsx(styles.row, selected && styles.selected)}
       onClick={handleClick}
       draggable

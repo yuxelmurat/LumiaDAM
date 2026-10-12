@@ -12,7 +12,7 @@
 }
 
 /* No-drag regions within the toolbar */
-.brandMenu, .searchContainer, .searchWrap, .controls, .editorTitle {
+.brandMenu, .searchContainer, .searchWrap, .controls {
   -webkit-app-region: no-drag;
 }
 
@@ -96,16 +96,6 @@
 .appMenu button:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: -2px; }
 .appMenu .menuItemActive { color: var(--color-brand-300); background: hsl(220 85% 50% / 0.12); }
 .menuDivider { height: 1px; margin: 5px 8px; background: var(--color-border); }
-
-.editorTitle {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-}
-.editorTitle span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @keyframes menuIn {
   from { opacity: 0; transform: translateY(-4px) scale(0.98); }
@@ -308,3 +298,13 @@
 .primaryBtn:hover { background: var(--color-brand-400); transform: translateY(-1px); }
 .primaryBtn:active { transform: translateY(0); }
 .primaryBtn svg { width: 14px; height: 14px; }
+
+.compactToolbar { height: 36px; padding: 0 10px; gap: 8px; }
+.compactToolbar .brandTrigger { height: 28px; padding: 0 6px; gap: 6px; }
+.compactToolbar .logo { width: 18px; height: 18px; }
+.compactToolbar .appName { font-size: 12px; }
+.editorControls { display: flex; align-items: center; gap: 6px; margin-left: auto; -webkit-app-region: no-drag; }
+.editorControls button { display: flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; font: inherit; font-size: 11px; color: var(--color-text-secondary); background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
+.editorControls button:hover:not(:disabled) { background: var(--color-bg-hover); color: var(--color-text-primary); }
+.editorControls button:focus-visible { outline: 2px solid var(--color-brand-500); }
+.editorControls button:disabled { opacity: .45; cursor: default; }

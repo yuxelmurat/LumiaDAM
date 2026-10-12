@@ -3,12 +3,14 @@ import clsx from 'clsx';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import type { Asset } from '../../types';
 import { ThreeViewer } from '../DetailPanel/ThreeViewer';
-import { IconStar, IconModel3D, IconImage, IconVideo, IconFileText } from '../Icons';
+import { IconStar, IconModel3D, IconImage, IconVideo, IconFileText, IconX } from '../Icons';
 import styles from './QuickLookModal.module.css';
 
 interface QuickLookModalProps {
   asset: Asset | null;
   isOpen: boolean;
+  persistent?: boolean;
+  onClose: () => void;
 }
 
 const VIDEO_STEPS = [
@@ -108,7 +110,16 @@ function VideoQuickLook({ filePath }: { filePath: string }) {
 export const QuickLookModal = memo(function QuickLookModal({
   asset,
   isOpen,
+  persistent = false,
+  onClose,
 }: QuickLookModalProps) {
+  const closeButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!isOpen || !persistent) return;
+    const previous = document.activeElement as HTMLElement | null;
+    closeButton.current?.focus();
+    return () => { if (previous?.isConnected) previous.focus(); };
+  }, [isOpen, persistent]);
   if (!isOpen || !asset) return null;
 
   const modelPath =
@@ -119,7 +130,7 @@ export const QuickLookModal = memo(function QuickLookModal({
     asset.kind === 'video' ||
     ['mp4', 'webm', 'mov', 'mkv', 'avi'].includes(asset.extension.toLowerCase());
 
-  const isNativeImg = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'svg'].includes(
+  const isNativeImg = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'svg', 'avif'].includes(
     asset.extension.toLowerCase()
   );
 
@@ -139,7 +150,16 @@ export const QuickLookModal = memo(function QuickLookModal({
   };
 
   return (
-    <div className={styles.overlay} aria-modal="true" role="dialog">
+    <div className={styles.overlay} aria-modal="true" role="dialog" aria-label={`Preview: ${asset.fileName}`}
+      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') { event.stopPropagation(); onClose(); }
+        if (event.key !== 'Tab' || !persistent) return;
+        const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button, [tabindex="0"]'));
+        const first = buttons[0], last = buttons.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }}>
       <div className={styles.container}>
         {/* Top Floating Header */}
         <div className={styles.header}>
@@ -165,6 +185,7 @@ export const QuickLookModal = memo(function QuickLookModal({
               </div>
             )}
             <span className={styles.sizeBadge}>{formatSize(asset.sizeBytes)}</span>
+            <button ref={closeButton} type="button" className={styles.closeButton} onClick={onClose} aria-label="Close preview"><IconX size={18} /></button>
           </div>
         </div>
 
@@ -207,8 +228,8 @@ export const QuickLookModal = memo(function QuickLookModal({
             {asset.filePath}
           </span>
           <div className={styles.hintBadge}>
-            <kbd className={styles.kbd}>Space</kbd>
-            <span>Release to close</span>
+            <kbd className={styles.kbd}>{persistent ? 'Esc' : 'Space'}</kbd>
+            <span>{persistent ? 'Close preview' : 'Release to close'}</span>
           </div>
         </div>
       </div>

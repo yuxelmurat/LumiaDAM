@@ -1,15 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { Asset } from '../../types';
 import styles from './EditorPanel.module.css';
 
-export const canEditImage = (asset: Asset | null) => !!asset && ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tif', 'tiff', 'pcraft'].includes(asset.extension.toLowerCase());
+export interface EditorPanelHandle { confirmClose: () => Promise<boolean> }
 const CHANNEL = 'lumiadam-editor-v1';
 interface PendingExport { id: string; name: string; bytes: ArrayBuffer }
 
-export function EditorPanel({ asset, onClose }: { asset: Asset; onClose: () => void }) {
+export const EditorPanel = forwardRef<EditorPanelHandle, { asset: Asset; onBusyChange?: (busy: boolean) => void }>(
+function EditorPanel({ asset, onBusyChange }, ref) {
   const frame = useRef<HTMLIFrameElement>(null);
   const pending = useRef<PendingExport | null>(null);
   const saving = useRef(false);
@@ -29,6 +30,9 @@ export function EditorPanel({ asset, onClose }: { asset: Asset; onClose: () => v
     );
     return approved && !saving.current;
   };
+
+  useImperativeHandle(ref, () => ({ confirmClose: allowClose }));
+  useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
 
   const save = async (item: PendingExport) => {
     if (saving.current) return;
@@ -79,7 +83,7 @@ export function EditorPanel({ asset, onClose }: { asset: Asset; onClose: () => v
       }
       if (data.type === 'opened') {
         setOpened(true);
-        setStatus('Edit locally. File > Export saves a new image beside the original; Save As keeps a layered project.');
+        setStatus('');
       }
       if (data.type === 'export' && !pending.current && typeof data.id === 'string' && typeof data.name === 'string' && data.bytes instanceof ArrayBuffer && data.bytes.byteLength > 0 && data.bytes.byteLength <= 256 * 1024 * 1024) {
         pending.current = { id: data.id, name: data.name, bytes: data.bytes };
@@ -105,17 +109,12 @@ export function EditorPanel({ asset, onClose }: { asset: Asset; onClose: () => v
   }, []);
 
   return <section className={styles.editor} aria-label="PhotoCraft image editor">
-    <div className={styles.bar}>
-      <strong>PhotoCraft</strong><span title={asset.filePath}>{asset.fileName}</span>
-      <span>Local editing · Original preserved</span>
-      <button disabled={busy} onClick={async () => { if (await allowClose()) onClose(); }}>Close editor</button>
-    </div>
-    <div className={styles.message} role={error ? 'alert' : 'status'}>
-      {error || status}
+    {(error || status) && <div className={styles.message} role={error ? 'alert' : 'status'}>
+      <span>{error || status}</span>
       {retry && <button disabled={busy} onClick={() => pending.current && void save(pending.current)}>Retry saving</button>}
-      {error && !opened && !busy && <button onClick={() => { setError(null); setStatus('Loading PhotoCraft…'); setAttempt((n) => n + 1); }}>Retry loading</button>}
-    </div>
+      {error && !opened && !busy && <button onClick={() => { setError(null); setOpened(false); setStatus('Loading PhotoCraft…'); setAttempt((n) => n + 1); }}>Retry loading</button>}
+    </div>}
     <iframe key={attempt} ref={frame} title="PhotoCraft" src="/photocraft/index.html" className={styles.frame}
       onLoad={() => send({ type: 'ping' })} />
   </section>;
-}
+});

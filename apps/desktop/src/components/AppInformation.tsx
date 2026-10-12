@@ -53,11 +53,16 @@ export function AppInformation({ page, onClose }: { page: InformationPage; onClo
       <p>Search matches both file names and folder paths. Try kitchen corona to find files in matching folders.
         Type filters still apply. Use Files and Folders to switch between results; open a folder to browse inside.</p>
       <h3>PhotoEditor</h3>
-      <p>Select a JPG, PNG, WebP, BMP, or TIFF image, then choose PhotoEditor.
+      <p>Double-click an image for a larger preview; double-click other files to open their default application.
+        Windows file associations determine which installed program opens ZIP, MAX, and other formats.</p>
+      <p>Right-click a JPG, PNG, WebP, BMP, TIFF image, or .pcraft project, then choose Open in PhotoEditor.
+        You can also select the file and choose PhotoEditor from the LumiaDAM menu.
+        The editor fills the workspace. Libraries keeps the session open; Close editor asks before discarding it.
         File &gt; Export saves a new image beside the original and adds it to the library.
         File &gt; Save As saves a layered .pcraft project.</p>
       <h3>Keyboard shortcuts in Libraries</h3>
-      <p>Hold Space for Quick Look. Ctrl+C copies selected file paths. F toggles favorites.
+      <p>Enter opens the focused file. Esc closes an enlarged preview. Hold Space for Quick Look.
+        Ctrl+C copies selected file paths. F toggles favorites.
         F2 renames the focused file. F5 refreshes libraries. Delete asks before moving files to the Recycle Bin.</p>
       <h3>Catalog storage</h3>
       <p>Settings lets you choose where catalogs and thumbnails are stored. A local SSD is recommended;

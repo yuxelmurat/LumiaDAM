@@ -3,9 +3,12 @@
 LumiaDAM, PhotoCraft'ın sabitlenmiş web sürümünü yerel dosyalar olarak paketler.
 Çalışırken bir web sitesine görsel yüklenmez. Libraries içinde desteklenen bir görseli seçtikten sonra
 LumiaDAM logosunun yanındaki menüden **PhotoEditor** açılır. Aynı menüden **Libraries** görünümüne
-dönmek editörü kapatmaz.
+dönmek editörü kapatmaz. Desteklenen görsellere ve `.pcraft` projelerine sağ tıklayıp
+**Open in PhotoEditor** seçeneğiyle de açılabilir. Editör tek, ince uygulama çubuğunun altında
+pencerenin kalan tamamını kullanır; kütüphane filtreleri ve durum çubuğu burada görünmez.
 İlk sürümde tek editör oturumu ve en fazla 256 MB kaynak/çıktı desteklenir.
-Başka kaynak açmak için oturumu kapatıp Libraries üzerinden seçim yapılır; editördeki File > Open
+Libraries üzerinden farklı kaynak seçildiğinde mevcut oturumun kapanışı için onay istenir;
+iptal edilirse mevcut çalışma saklanır. Editördeki File > Open
 ve dosya sürükleme, kaynak ilişkisinin yanlış dosyaya bağlanmasını önlemek için yönlendirme gösterir.
 
 ## Kullanım
@@ -15,10 +18,10 @@ ve dosya sürükleme, kaynak ilişkisinin yanlış dosyaya bağlanmasını önle
 - Çıktı kaynak klasörüne `kaynak_edited_<export-uuid>.uzantı` adıyla yazılır. Orijinalin üzerine yazılmaz.
 - Kaydedilen dosya kataloğa eklenir; görüntüler mevcut küçük resim kuyruğuna gönderilir. NAS yeniden taranmaz.
 - Çıktının metadata alanında `source_asset_id`, `editor` ve `editor_export_id` tutulur.
-- Başarısız kayıt editörün üstündeki durum satırında görünür; **Retry saving** aynı çıktıyı yeniden dener.
+- Başarısız kayıt editörün altındaki geçici durum bildiriminde görünür; **Retry saving** aynı çıktıyı yeniden dener.
   Katalog güncellemesi başarısızsa diske yazılmış dosya silinmez. Başarılı onay gelene kadar yeni export engellenir.
 - Editörü kapatırken kaydedilmemiş çalışma uyarısı gösterilir. PhotoCraft'ın kendi Save bildirimi
-  aktarımın başlamasını gösterir; diskte kayıt için LumiaDAM üst durum satırındaki **Saved** sonucunu bekleyin.
+  aktarımın başlamasını gösterir; diskte kayıt için LumiaDAM durum bildirimindeki **Saved** sonucunu bekleyin.
 
 HDR/EXR/PSD düzenlemesi, HEIF ve Max bağlantısı bu entegrasyonun doğrulanmış kapsamına dahil değildir.
 PhotoCraft erken alpha aşamasındadır; kendi menülerindeki tüm işlevler LumiaDAM tarafından doğrulanmış sayılmaz.

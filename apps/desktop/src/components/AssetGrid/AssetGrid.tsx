@@ -3,6 +3,7 @@ import clsx from 'clsx';
 import { open } from '@tauri-apps/plugin-dialog';
 import { api } from '../../api';
 import { useUIStore, useAssetStore, useLibraryStore } from '../../store';
+import { activateAsset, canEditImage } from './assetActions';
 import { observeVisiblePreviews } from './visiblePreviews';
 import { AssetCard } from './AssetCard';
 import { AssetListRow } from './AssetListRow';
@@ -17,9 +18,41 @@ const GRID_COLS: Record<'sm' | 'md' | 'lg', number> = {
   lg: 280,
 };
 
-export function AssetGrid() {
+export function AssetGrid({ onPreviewAsset, onOpenEditorAsset }: {
+  onPreviewAsset: (asset: Asset) => void;
+  onOpenEditorAsset: (asset: Asset) => void | Promise<void>;
+}) {
   const { viewMode, gridSize, selectedAssetIds, selectAsset, clearSelection } = useUIStore();
   const { assets, folders, folderTotal, loading, total, searchError, folderLoading, folderError, searchFolders, search, page, pageSize, setPage, query } = useAssetStore();
+  const [contextMenu, setContextMenu] = useState<{ asset: Asset; x: number; y: number } | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
+  const contextRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!contextMenu) return;
+    contextRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    const outside = (event: PointerEvent) => {
+      if (!contextRef.current?.contains(event.target as Node)) setContextMenu(null);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setContextMenu(null);
+        document.getElementById(`asset-${contextMenu.asset.id}`)?.focus();
+        document.getElementById(`asset-row-${contextMenu.asset.id}`)?.focus();
+      }
+    };
+    window.addEventListener('pointerdown', outside);
+    window.addEventListener('keydown', escape);
+    return () => { window.removeEventListener('pointerdown', outside); window.removeEventListener('keydown', escape); };
+  }, [contextMenu]);
+  const assetAt = (target: EventTarget) => {
+    const card = (target as Element).closest<HTMLElement>('[data-asset-id]');
+    return card?.dataset.assetId ? useAssetStore.getState().getById(card.dataset.assetId) : undefined;
+  };
+  const openAsset = async (asset: Asset) => {
+    setContextMenu(null); setOpenError(null); selectAsset(asset.id);
+    try { await activateAsset(asset, onPreviewAsset, onOpenEditorAsset); }
+    catch (error) { setOpenError(`Could not open ${asset.fileName}: ${String(error)}`); }
+  };
   const [activeTab, setActiveTab] = useState<'files' | 'folders'>('files');
   const previewViewport = useRef<HTMLDivElement>(null);
   const prioritizedPreviews = useRef(new Set<string>());
@@ -49,6 +82,31 @@ export function AssetGrid() {
   return (
     <div className={styles.container}>
       <FilterBar />
+      {openError && <div className={styles.openError} role="alert">{openError}
+        <button type="button" onClick={() => setOpenError(null)} aria-label="Dismiss file opening error">×</button>
+      </div>}
+      {contextMenu && <div ref={contextRef} className={styles.contextMenu} role="menu" aria-label="File actions"
+        style={{ left: contextMenu.x, top: contextMenu.y }} onKeyDown={(event) => {
+          if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+          const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 :
+            (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+          buttons[next]?.focus();
+        }}>
+        <button type="button" role="menuitem" onClick={() => void openAsset(contextMenu.asset)}>Open</button>
+        <button type="button" role="menuitem" disabled={!canEditImage(contextMenu.asset)}
+          onClick={() => {
+            const asset = contextMenu.asset; setContextMenu(null); setOpenError(null);
+            void Promise.resolve().then(() => onOpenEditorAsset(asset))
+              .catch(error => setOpenError(`Could not edit ${asset.fileName}: ${String(error)}`));
+          }}>Open in PhotoEditor</button>
+        <button type="button" role="menuitem" onClick={() => {
+          const asset = contextMenu.asset; setContextMenu(null);
+          void api.revealInExplorer(asset.filePath).catch(error => setOpenError(`Could not show ${asset.fileName}: ${String(error)}`));
+        }}>Show in Explorer</button>
+      </div>}
       <FolderNavigation />
       <div className={styles.tabs} role="tablist" aria-label="Results" onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -91,7 +149,25 @@ export function AssetGrid() {
           </div> : folderTotal ? <FolderResults /> : <p className={styles.emptyText}>No matching folders.</p>}
         </div>
       ) : (
-      <div className={styles.scrollArea} role="tabpanel" ref={previewViewport} id="files-panel" aria-labelledby="files-tab" onClick={handleBackdropClick}>
+      <div className={styles.scrollArea} role="tabpanel" ref={previewViewport} id="files-panel" aria-labelledby="files-tab" onClick={handleBackdropClick}
+        onDoubleClick={(event) => {
+          if ((event.target as Element).closest('button, a, input, select')) return;
+          const asset = assetAt(event.target); if (asset) void openAsset(asset);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' || (event.target as Element).closest('button, a, input, select')) return;
+          const asset = assetAt(event.target); if (asset) { event.preventDefault(); void openAsset(asset); }
+        }}
+        onContextMenu={(event) => {
+          const asset = assetAt(event.target); if (!asset) return;
+          event.preventDefault();
+          const selection = useUIStore.getState();
+          if (!selection.selectedAssetIds.has(asset.id)) selectAsset(asset.id);
+          else selection.focusAsset(asset.id);
+          const rect = (event.target as Element).closest('[data-asset-id]')!.getBoundingClientRect();
+          setContextMenu({ asset, x: Math.max(8, Math.min(event.clientX || rect.left + 12, window.innerWidth - 228)),
+            y: Math.max(8, Math.min(event.clientY || rect.top + 12, window.innerHeight - 140)) });
+        }}>
         {total === 0 ? <p className={styles.emptyText}>No matching files. Check the Folders tab or adjust your filters.</p> : viewMode === 'grid' ? (
           <div
             className={styles.grid}
