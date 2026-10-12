@@ -25,6 +25,7 @@ pub struct LibraryHandle {
     pub scan_lock: Arc<tokio::sync::Mutex<()>>,
     pub scan_processed: Arc<AtomicU64>,
     pub scan_full: Arc<AtomicBool>,
+    pub preview_retry_at: Arc<std::sync::atomic::AtomicI64>,
     pub pool: Pool<Sqlite>,
 }
 
@@ -287,6 +288,7 @@ impl Database {
             scan_lock: Arc::new(tokio::sync::Mutex::new(())),
             scan_processed: Arc::new(AtomicU64::new(0)),
             scan_full: Arc::new(AtomicBool::new(false)),
+            preview_retry_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             pool: lib_pool,
         };
 

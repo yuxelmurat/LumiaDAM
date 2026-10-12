@@ -52,6 +52,7 @@ fn legacy_payload_still_deserializes() {
 
 async fn database(fixture: &Catalog, pool: &SqlitePool) -> crate::db::Database {
     let library = crate::db::LibraryHandle {
+        preview_retry_at: std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0)),
         id: "test-library".into(), name: "Archive".into(), root_path: std::path::PathBuf::from("C:/Asset Archive"), catalog_dir: fixture.0.clone(),
         scan_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())), scan_processed: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)), scan_full: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)), pool: pool.clone(),
     };

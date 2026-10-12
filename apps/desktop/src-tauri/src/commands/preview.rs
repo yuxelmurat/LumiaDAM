@@ -60,7 +60,7 @@ pub(crate) async fn enqueue_previews(
         .bind(&ids_json).fetch_all(&mut *tx).await?;
     // Eski ortak küçük resim veya kaybolan yerel cache yeniden üretilir; kaynak dosya açılmaz.
     let candidates = tokio::task::spawn_blocking(move || candidates.into_iter().filter_map(|(id, extension, status, thumb)| {
-        if !crate::preview::is_previewable(&extension) { return None; }
+        if !crate::preview::can_request_preview(&extension) { return None; }
         let invalid = status == "done" && (thumb.as_ref().is_some_and(|path| crate::db::is_legacy_thumbnail(path)) ||
             (crate::preview::is_native_image(&extension) && thumb.as_ref().is_none_or(|path| !std::path::Path::new(path).is_file())));
         (status != "done" || invalid).then_some((id, invalid))

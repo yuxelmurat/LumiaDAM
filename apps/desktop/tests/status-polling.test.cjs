@@ -33,6 +33,18 @@ test('Eşzamanlı yenilemeler yalnız bir status sorgusu gönderir', async () =>
   finish([]); await Promise.all([a, b]); poller.stop();
 });
 
+test('Kaynak beklenirken kalan işler çalışma sayılmaz; diğer kütüphane çalışıyorsa durum sık yenilenir', async () => {
+  for (const [statuses, delay] of [
+    [[{ previewPending: 80000, previewPaused: true }], 30000],
+    [[{ previewPending: 80000, previewPaused: true }, { previewPending: 1, previewPaused: false }], 2000],
+  ]) {
+    const { poller, timers } = setup(async () => statuses);
+    await poller.refresh();
+    assert.equal([...timers.values()][0].delay, delay);
+    poller.stop();
+  }
+});
+
 test('Birçok preview olayı tek bir durum yenilemesinde birleştirilir', async () => {
   const { poller, timers } = setup(async () => []);
   await poller.refresh();

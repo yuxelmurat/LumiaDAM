@@ -26,7 +26,7 @@ export function createStatusPolling(options: {
       try {
         const statuses = await options.read();
         if (stopped) return;
-        active = statuses.some((s) => s.scanning || s.previewPending > 0);
+        active = statuses.some((s) => s.scanning || (s.previewPending > 0 && !s.previewPaused));
         options.onStatus(statuses);
       } catch (error) {
         if (!stopped) { active = false; options.onError(error); }

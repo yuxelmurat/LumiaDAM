@@ -68,7 +68,42 @@ async fn search_catalog(db: &Database, query: serde_json::Value, page_size: i64)
 }
 
 #[tokio::test]
-async fn old_hdr_errors_are_retried_once_when_catalog_opens() {
+async fn cached_preview_and_related_image_survive_disconnection_and_restart() {
+    let fixture = Fixture::new();
+    let source = fixture.0.join("NAS");
+    std::fs::create_dir_all(source.join("kitchen")).unwrap();
+    image::RgbImage::from_pixel(16, 8, image::Rgb([30, 150, 220])).save(source.join("kitchen/9.jpg")).unwrap();
+    std::fs::write(source.join("kitchen/9.zip"), b"archive").unwrap();
+    let db = fixture.database().await;
+    let id = Uuid::new_v4().to_string();
+    register_row(&db, &id, &source).await;
+    let library = db.register_library(&id, "NAS", &source).await.unwrap();
+    crate::watcher::index_paths(&db, &id, &[source.to_string_lossy().into_owned()]).await.unwrap();
+    let asset: String = sqlx::query_scalar("SELECT id FROM assets WHERE extension='jpg'").fetch_one(&library.pool).await.unwrap();
+    let thumb = library.catalog_dir.join("thumbs").join(&asset).join("preview.jpg");
+    crate::preview::generate_image_thumb(&source.join("kitchen/9.jpg"), &thumb).unwrap();
+    sqlx::query("UPDATE assets SET thumbnail_path=?,preview_status='done' WHERE id=?").bind(thumb.to_string_lossy().as_ref()).bind(&asset).execute(&library.pool).await.unwrap();
+    sqlx::query("UPDATE preview_jobs SET status='done' WHERE asset_id=?").bind(&asset).execute(&library.pool).await.unwrap();
+    close(db).await;
+    std::fs::rename(&source, fixture.0.join("disconnected")).unwrap();
+    let db = fixture.database().await;
+    let library = db.get_library_handle(Some(&id)).await.unwrap();
+    crate::commands::preview::enqueue_previews(&library.pool, &[asset], false).await.unwrap();
+    let result = search_catalog(&db, serde_json::json!({"text":"kitchen"}), 100).await;
+    assert_eq!(result.total, 2);
+    for asset in result.assets {
+        let cached = asset.thumbnail_path.or_else(|| asset.related_image.and_then(|image| image.thumbnail_path)).unwrap();
+        assert_eq!(image::open(cached).unwrap().width(), 512);
+    }
+    let errors: i64 = sqlx::query_scalar("SELECT count(*) FROM preview_jobs WHERE status='error'").fetch_one(&library.pool).await.unwrap();
+    assert_eq!(errors, 0);
+    assert!(crate::watcher::index_paths(&db, &id, &[source.to_string_lossy().into_owned()]).await.is_err());
+    assert_eq!(search_catalog(&db, serde_json::json!({}), 100).await.total, 2);
+    close(db).await;
+}
+
+#[tokio::test]
+async fn old_preview_errors_are_retried_once_after_generator_upgrade() {
     let fixture = Fixture::new();
     let source = fixture.0.join("images");
     std::fs::create_dir(&source).unwrap();
@@ -84,14 +119,14 @@ async fn old_hdr_errors_are_retried_once_when_catalog_opens() {
     sqlx::query("UPDATE preview_jobs SET status = 'error'").execute(&library.pool).await.unwrap();
     sqlx::query("UPDATE assets SET preview_status = 'error'").execute(&library.pool).await.unwrap();
 
-    crate::preview::retry_failed_hdr_previews(&library.pool).await.unwrap();
+    crate::preview::retry_failed_previews(&library.pool).await.unwrap();
     let states: Vec<(String, String)> = sqlx::query_as(
         "SELECT a.extension, p.status FROM assets a JOIN preview_jobs p ON p.asset_id = a.id ORDER BY a.extension"
     ).fetch_all(&library.pool).await.unwrap();
-    assert_eq!(states, [("exr".into(), "queued".into()), ("hdr".into(), "queued".into()), ("max".into(), "error".into())]);
+    assert_eq!(states, [("exr".into(), "queued".into()), ("hdr".into(), "queued".into()), ("max".into(), "queued".into())]);
     sqlx::query("UPDATE preview_jobs SET status = 'error' WHERE asset_id IN (SELECT id FROM assets WHERE extension = 'hdr')")
         .execute(&library.pool).await.unwrap();
-    crate::preview::retry_failed_hdr_previews(&library.pool).await.unwrap();
+    crate::preview::retry_failed_previews(&library.pool).await.unwrap();
     let hdr_status: String = sqlx::query_scalar("SELECT p.status FROM preview_jobs p JOIN assets a ON a.id = p.asset_id WHERE a.extension = 'hdr'")
         .fetch_one(&library.pool).await.unwrap();
     assert_eq!(hdr_status, "error");

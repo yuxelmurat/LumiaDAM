@@ -99,7 +99,9 @@ export function AppInformation({ page, onClose }: { page: InformationPage; onClo
         <p>LumiaDAM can match a companion image in the same folder, such as 9.zip and 9.jpg.
           The small Related image frame identifies that association. It does not extract or preview ZIP contents.</p></details>
       <details><summary>Can I preview HDR and EXR files?</summary>
-        <p>HDR and EXR thumbnail previews are supported. This does not mean those formats can be edited in PhotoEditor.</p></details>
+        <p>HDR and EXR use Windows thumbnail providers when available, with a built-in image decoder as fallback.
+          Support depends on the file's encoding and installed codecs. Previews are saved in the local catalog cache;
+          these formats are not supported for editing in PhotoEditor.</p></details>
       <details><summary>Does editing overwrite my original image?</summary>
         <p>No. The LumiaDAM save/export bridge creates a new file beside the source and adds it to the catalog.
           This applies to images, PDFs and vectors. Use File &gt; Save As to keep a layered .pcraft or .vectorcraft project.</p></details>
@@ -108,7 +110,8 @@ export function AppInformation({ page, onClose }: { page: InformationPage; onClo
           complex artwork may render differently. PdfCraft and VectorCraft are still in development.</p></details>
       <details><summary>Can I use a disconnected library?</summary>
         <p>Existing catalog entries and cached thumbnails remain available. Opening source files,
-          editing, generating missing previews, and rescanning require access to the source drive or NAS.</p></details>
+          editing, generating missing previews, and rescanning require access to the source drive or NAS.
+          Preview generation pauses when the source is unavailable and retries automatically. Status shows this waiting state.</p></details>
       <details><summary>Is the 3ds Max render bridge available?</summary>
         <p>Not yet. Direct render transfer from 3ds Max is planned.</p></details>
     </>}
