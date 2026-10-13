@@ -9,8 +9,10 @@ export async function activateAsset(
   asset: Asset,
   preview: (asset: Asset) => void,
   edit: (asset: Asset, editor?: EditorId) => void | Promise<void>,
+  viewCad: (asset: Asset) => void,
 ): Promise<void> {
-  if (isImageAsset(asset)) preview(asset);
+  if (['dwg', 'dxf'].includes(asset.extension.toLowerCase())) viewCad(asset);
+  else if (isImageAsset(asset)) preview(asset);
   else if (['pcraft', 'pdf', 'vectorcraft', 'drawcraft', 'svgz'].includes(asset.extension.toLowerCase()))
     await edit(asset, editorForAsset(asset) ?? 'photo');
   else await api.openWithDefault(asset.filePath);

@@ -43,6 +43,7 @@ LumiaDAM indexes that structure into a local SQLite catalog. A search for `livin
 | ✨  | **Built-in PhotoEditor**        | Open supported images in the bundled PhotoCraft editor without sending them to a web service. Exports become new cataloged assets beside the source file.                   |
 | 📄  | **Built-in PDFEditor**          | Open PDFs in the local PdfCraft workspace to read, annotate, fill forms and organize pages. Saves create a new PDF beside the source.                                       |
 | ✒️  | **Built-in VectorEditor**       | Use VectorCraft for SVG art, native vector projects, PDF-compatible AI files and supported images. Exports return to the library as new assets.                            |
+| 📐  | **Built-in CAD Viewer**         | Open DWG and DXF drawings locally, switch layouts and layers, and inspect details without launching AutoCAD or uploading the file.                                        |
 | 🏷️  | **Library organization**        | Tags, ratings, color labels, favorites, and nested collections help add structure without renaming source files.                                                            |
 | 👁️  | **Quick Look and file opening** | Double-click an image for a larger preview, a PDF for PDFEditor, or a vector project for VectorEditor. Other files open in their Windows default app.                        |
 | 📊  | **Visible background activity** | The status panel reports scan and preview progress, the last scan time, completed/remaining work, and a rescan action.                                                      |
@@ -55,7 +56,7 @@ Preview support varies by format:
 
 - **Images:** JPG/JPEG, PNG, WebP, BMP, TIFF, GIF, TGA, HDR, and EXR.
 - **Editable in PhotoEditor:** JPG/JPEG, PNG, WebP, BMP, TIFF, and layered `.pcraft` projects.
-- **3D/CAD and design files:** formats such as MAX, RVT/RFA, DWG/DXF, SKP, BLEND, C4D, 3DM, OBJ, FBX, GLTF/GLB, STL, materials, and IES files are indexed. Preview availability depends on embedded data and installed preview tooling.
+- **3D/CAD and design files:** formats such as MAX, RVT/RFA, DWG/DXF, SKP, BLEND, C4D, 3DM, OBJ, FBX, GLTF/GLB, STL, materials, and IES files are indexed. DWG/DXF can be opened in the built-in CAD Viewer; thumbnail availability depends on embedded data and installed preview tooling.
 
 Indexing a format does not imply full geometry parsing, renderer compatibility detection, or one-click import into a DCC application.
 
@@ -79,7 +80,7 @@ flowchart LR
 4. Browse the matching folder or refine the result with type and metadata filters.
 5. Open an image in **PhotoEditor**, export a new version, and keep the original untouched.
 
-The application menu beside the LumiaDAM logo contains **Libraries**, **PhotoEditor**, **PDFEditor**, **VectorEditor**, **Settings**, **Help**, **About**, **FAQ**, and **Exit**. Help includes a quick start guide and keyboard shortcuts; FAQ explains catalog storage, search, previews, and editing. About shows the app version, license credits, project links, and a support link. Exit uses the normal window close request so an open editor can warn about unsaved work. Switching back to Libraries does not discard the current editor session.
+The application menu beside the LumiaDAM logo contains **Libraries**, **PhotoEditor**, **PDFEditor**, **VectorEditor**, **CAD Viewer**, **Settings**, **Help**, **About**, **FAQ**, and **Exit**. Help includes a quick start guide and keyboard shortcuts; FAQ explains catalog storage, search, previews, and editing. About shows the app version, license credits, project links, and a support link. Exit uses the normal window close request so an open editor can warn about unsaved work. Switching back to Libraries does not discard the current editor session.
 
 ## Storage designed for real archives
 
@@ -131,9 +132,15 @@ Only one editor session is active at a time; opening a different source or edito
 
 [Local editor builds, licensing and update process](docs/LOCAL-EDITORS.md)
 
+## CAD Viewer
+
+LumiaDAM uses the MIT-licensed [Exav Viewer](https://github.com/sylvinus/exav) to open DWG R13–R2018 and DXF drawings locally. Double-click a drawing or choose **Open in CAD Viewer** from its right-click menu. The full-window workspace provides pan, zoom, fit-to-view, model/paper layout selection, and per-layer visibility. Drawing data stays on the computer.
+
+When a drawing contains an embedded PNG or BMP preview, LumiaDAM stores a resized copy in the local thumbnail cache. That thumbnail remains available while a NAS or removable drive is offline; opening the interactive drawing still requires the source file. Drawings without an embedded preview may use an installed Windows thumbnail provider. External references, proxy/custom objects, and newer DWG versions may be incomplete, and the viewer currently accepts source files up to 256 MB.
+
 ## Project status
 
-LumiaDAM is in active **v0.1.0 development**. The current codebase contains the Windows application, local catalog architecture, path-aware folder search, background status reporting, related previews, HDR/EXR thumbnails, and three embedded editors.
+LumiaDAM is in active **v0.1.0 development**. The current codebase contains the Windows application, local catalog architecture, path-aware folder search, background status reporting, related previews, HDR/EXR thumbnails, three embedded editors, and a local DWG/DXF viewer.
 
 There is no public signed installer release yet. The Releases page will become the download source after the first tested package is published. Until then, build LumiaDAM from source and evaluate it with backed-up sample libraries.
 
@@ -198,6 +205,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the repository layout and development
 - [x] Incremental folder updates, visible preview priority, and adaptive activity polling
 - [x] Native HDR and EXR thumbnail generation
 - [x] Embedded local PhotoEditor with safe, non-destructive exports
+- [x] Local DWG/DXF viewer with layouts, layer visibility, and embedded preview caching
 
 ### Planned
 
@@ -225,6 +233,8 @@ LumiaDAM is distributed under the [MIT License](LICENSE). The original copyright
 LumiaDAM began from the MIT-licensed [OpenDAM](https://github.com/LawLaw09/OpenDAM) codebase and has since introduced its own product identity, local catalog storage model, archive-focused search and folder navigation, preview behavior, status interface, and PhotoEditor workflow.
 
 The embedded image editor is based on [PhotoCraft](https://github.com/storytold/photocraft), licensed under MIT OR Apache-2.0. Its license and attribution files are preserved in packaged builds.
+
+DWG/DXF viewing and embedded drawing preview extraction use the MIT-licensed [Exav Viewer and exav-render](https://github.com/sylvinus/exav). LumiaDAM pins their versions so upstream updates can be reviewed and tested before adoption.
 
 ---
 

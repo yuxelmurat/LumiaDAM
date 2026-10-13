@@ -1,7 +1,7 @@
-import { useEffect, useState, useRef } from 'react';
+import { lazy, Suspense, useEffect, useState, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { Sidebar } from './components/Sidebar/Sidebar';
-import { Toolbar } from './components/Toolbar/Toolbar';
+import { Toolbar, type WorkspaceId } from './components/Toolbar/Toolbar';
 import { AssetGrid } from './components/AssetGrid/AssetGrid';
 import { DetailPanel } from './components/DetailPanel/DetailPanel';
 import { StatusBar } from './components/StatusBar/StatusBar';
@@ -16,6 +16,8 @@ import { EditorPanel, type EditorPanelHandle } from './components/Editor/EditorP
 import { editors, canOpenInEditor, editorForAsset, type EditorId } from './components/Editor/editors';
 import { message } from '@tauri-apps/plugin-dialog';
 import type { Asset } from './types';
+
+const CadViewer = lazy(() => import('./components/CadViewer/CadViewer').then(module => ({ default: module.CadViewer })));
 
 function isEditingText(): boolean {
   const active = document.activeElement;
@@ -41,7 +43,8 @@ export default function App() {
   const [editorBusy, setEditorBusy] = useState(false);
   const [editorAsset, setEditorAsset] = useState<Asset | null>(null);
   const [editorKind, setEditorKind] = useState<EditorId>('photo');
-  const [workspace, setWorkspace] = useState<'library' | EditorId>('library');
+  const [cadAsset, setCadAsset] = useState<Asset | null>(null);
+  const [workspace, setWorkspace] = useState<WorkspaceId>('library');
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
   const [copyToast, setCopyToast] = useState<string | null>(null);
@@ -246,6 +249,11 @@ export default function App() {
   };
   const reportEditorError = (error: unknown) => message(`The editor could not complete the action: ${String(error)}`,
     { title: 'LumiaDAM editor', kind: 'error' }).catch(console.error);
+  const openCadAsset = (asset: Asset | null) => {
+    if (asset && ['dwg', 'dxf'].includes(asset.extension.toLowerCase())) setCadAsset(asset);
+    setWorkspace('cad');
+    setQuickLookMode(null);
+  };
 
   return (
     <div className={styles.layout}>
@@ -255,19 +263,32 @@ export default function App() {
         onCloseEditor={editorAsset && workspace === editorKind ? () => { void closeEditor().catch(reportEditorError); } : undefined}
         onOpenLibraries={() => setWorkspace('library')}
         onOpenEditor={editor => { void openEditorAsset(focusedAsset, editor).catch(reportEditorError); }}
+        onOpenCad={() => openCadAsset(focusedAsset)}
+        focusedAsset={focusedAsset}
       />
       <div className={styles.body} style={{ display: workspace === 'library' ? undefined : 'none' }}>
         {sidebarOpen && <Sidebar />}
         <main className={styles.main}>
-          <AssetGrid onPreviewAsset={() => setQuickLookMode('persistent')} onOpenEditorAsset={openEditorAsset} />
+          <AssetGrid onPreviewAsset={() => setQuickLookMode('persistent')} onOpenEditorAsset={openEditorAsset} onOpenCadAsset={openCadAsset} />
         </main>
         {detailPanelOpen && <DetailPanel />}
       </div>
       <div className={styles.editorWorkspace} style={{ display: workspace !== 'library' ? undefined : 'none' }}>
-        <div style={{ height: '100%', display: editorAsset && workspace === editorKind ? undefined : 'none' }}>
+        <div style={{ height: '100%', display: workspace !== 'cad' && editorAsset && workspace === editorKind ? undefined : 'none' }}>
           {editorAsset && <EditorPanel key={`${editorKind}:${editorAsset.id}`} ref={editorRef} asset={editorAsset} editor={editorKind} onBusyChange={setEditorBusy} />}
         </div>
-        {workspace !== 'library' && (!editorAsset || workspace !== editorKind) && (
+        {workspace === 'cad' && cadAsset && <Suspense fallback={<div className={styles.editorEmpty}><p>Loading CAD Viewer…</p></div>}>
+          <CadViewer key={`${cadAsset.id}:${cadAsset.modifiedAt}`} asset={cadAsset} />
+        </Suspense>}
+        {workspace === 'cad' && !cadAsset && (
+          <div className={styles.editorEmpty}>
+            <img src="/brand/lumiadam-mark.png" alt="" />
+            <h2>CAD Viewer</h2>
+            <p>Select a DWG or DXF file in Libraries, then double-click it or choose Open in CAD Viewer.</p>
+            <button type="button" onClick={() => setWorkspace('library')}>Open Libraries</button>
+          </div>
+        )}
+        {workspace !== 'library' && workspace !== 'cad' && (!editorAsset || workspace !== editorKind) && (
           <div className={styles.editorEmpty}>
             <img src="/brand/lumiadam-mark.png" alt="" />
             <h2>{editors[workspace].title}</h2>

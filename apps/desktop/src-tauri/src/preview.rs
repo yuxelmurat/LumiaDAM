@@ -10,6 +10,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 pub const THUMB_SIZE: u32 = 512;
+const MAX_CAD_PREVIEW_BYTES: u64 = 256 * 1024 * 1024;
 
 pub async fn initialize(pool: &sqlx::SqlitePool) -> Result<()> {
     let columns: Vec<(i64, String, String, i64, Option<String>, i64)> =
@@ -63,6 +64,7 @@ pub fn is_previewable(ext: &str) -> bool {
                 | "rfa"
                 | "rvt"
                 | "dwg"
+                | "dxf"
                 | "3dm"
                 | "vrmat"
                 | "psd"
@@ -163,6 +165,24 @@ pub fn generate_image_thumb(source: &Path, output: &Path) -> Result<()> {
             thumb.save(output)?;
         }
     }
+    Ok(())
+}
+
+/// DWG/DXF içinde kayıtlı önizlemeyi çizimin tamamını ayrıştırmadan yerel önbelleğe çıkarır.
+pub fn generate_cad_thumb(source: &Path, output: &Path) -> Result<()> {
+    anyhow::ensure!(std::fs::metadata(source)?.len() <= MAX_CAD_PREVIEW_BYTES,
+        "Drawing is too large for the embedded preview reader");
+    let bytes = std::fs::read(source)?;
+    let preview = exav_render::cad::preview(&bytes)
+        .ok_or_else(|| anyhow!("Drawing contains no embedded PNG/BMP preview"))?;
+    let format = match preview.format {
+        exav_render::cad::PreviewFormat::Bmp => image::ImageFormat::Bmp,
+        exav_render::cad::PreviewFormat::Png => image::ImageFormat::Png,
+    };
+    let image = image::load_from_memory_with_format(&preview.data, format)?;
+    if let Some(parent) = output.parent() { std::fs::create_dir_all(parent)?; }
+    image.thumbnail(THUMB_SIZE, THUMB_SIZE)
+        .save_with_format(output, image::ImageFormat::Png)?;
     Ok(())
 }
 
@@ -330,7 +350,7 @@ fn python_paths() -> (PathBuf, PathBuf) {
 }
 
 const NATIVE_EXTENSIONS: &str =
-    "'jpg','jpeg','png','bmp','gif','tif','tiff','tga','webp','hdr','exr','svg'";
+    "'jpg','jpeg','png','bmp','gif','tif','tiff','tga','webp','hdr','exr','svg','dwg','dxf'";
 const NATIVE_CONCURRENCY: usize = 2;
 
 #[derive(Debug, sqlx::FromRow)]
@@ -622,6 +642,24 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                     let result = if let Some(result) = hdr_shell {
                         Ok(result)
                     } else if native {
+                        if matches!(job.extension.to_ascii_lowercase().as_str(), "dwg" | "dxf") {
+                            let thumb = output.join("cad_thumb.png");
+                            let cad_source = source.clone();
+                            let cad_thumb = thumb.clone();
+                            let result = tokio::task::spawn_blocking(move ||
+                                generate_cad_thumb(&cad_source, &cad_thumb)).await;
+                            match result {
+                                Ok(Ok(())) => Ok((Some(thumb.to_string_lossy().into_owned()), None)),
+                                error => {
+                                    tracing::warn!("Embedded CAD preview unavailable, using Windows/Python fallback: {error:?}");
+                                    if let Err(error) = defer_to_python(&lib.pool, &job).await {
+                                        tracing::error!("CAD preview fallback enqueue failed: {error}");
+                                    }
+                                    state.db.preview_wakeup.notify_waiters();
+                                    break;
+                                }
+                            }
+                        } else {
                         let stem = source
                             .file_stem()
                             .and_then(|value| value.to_str())
@@ -652,6 +690,7 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                                 state.db.preview_wakeup.notify_waiters();
                                 break;
                             }
+                        }
                         }
                     } else {
                         match run_shell(&source, &output).await {

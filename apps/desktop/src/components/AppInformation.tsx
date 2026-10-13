@@ -19,6 +19,7 @@ const links = {
     ['PhotoCraft', 'https://github.com/storytold/photocraft'],
     ['PdfCraft', 'https://github.com/storytold/pdfcraft'],
     ['VectorCraft', 'https://github.com/storytold/vectorcraft'],
+    ['Exav Viewer', 'https://github.com/sylvinus/exav'],
     ['Buy me a coffee', 'https://buymeacoffee.com/yuxelmurat8'],
   ],
   faq: [['Documentation', 'https://github.com/yuxelmurat/LumiaDAM#readme']],
@@ -68,6 +69,10 @@ export function AppInformation({ page, onClose }: { page: InformationPage; onClo
         VectorEditor uses VectorCraft for SVG artwork, vector projects and PDF-compatible AI files.
         Open them from the LumiaDAM menu or the file's right-click menu. Save/export creates a new library asset;
         wait for the LumiaDAM Saved message before closing. Both engines are in active development.</p>
+      <h3>CAD Viewer</h3>
+      <p>Double-click a DWG or DXF file, or choose Open in CAD Viewer from its right-click menu.
+        The local viewer supports layers, model and paper layouts, pan, and zoom without uploading the drawing.
+        The source drive must be available when opening the full drawing; cached thumbnails remain visible offline.</p>
       <h3>Keyboard shortcuts in Libraries</h3>
       <p>Enter opens the focused file. Esc closes an enlarged preview. Hold Space for Quick Look.
         Ctrl+C copies selected file paths. F toggles favorites.
@@ -83,7 +88,8 @@ export function AppInformation({ page, onClose }: { page: InformationPage; onClo
       <h3>Credits</h3>
       <p>Based on OpenDAM by OpenDAM Contributors. The original MIT copyright notice is preserved.</p>
       <p>The embedded editors are based on PhotoCraft, PdfCraft and VectorCraft, licensed under MIT OR Apache-2.0.
-        Its license and attribution files are included in packaged builds.</p>
+        Their license and attribution files are included in packaged builds.</p>
+      <p>CAD viewing and embedded drawing previews use the MIT-licensed Exav Viewer and exav-render projects.</p>
     </>}
     {page === 'faq' && <>
       <details open><summary>Does every search scan my NAS again?</summary>
@@ -108,6 +114,10 @@ export function AppInformation({ page, onClose }: { page: InformationPage; onClo
       <details><summary>Can VectorEditor open every Illustrator file?</summary>
         <p>No. AI import requires a PDF-compatible file. SVG, PDF and VectorCraft projects are also supported;
           complex artwork may render differently. PdfCraft and VectorCraft are still in development.</p></details>
+      <details><summary>Which CAD drawings can LumiaDAM open?</summary>
+        <p>CAD Viewer opens DWG R13–R2018 and DXF drawings locally. It provides model and paper layouts,
+          layer visibility, pan and zoom. External references, proxy objects, or newer DWG versions may be incomplete.
+          Embedded drawing previews are cached locally when the source includes one.</p></details>
       <details><summary>Can I use a disconnected library?</summary>
         <p>Existing catalog entries and cached thumbnails remain available. Opening source files,
           editing, generating missing previews, and rescanning require access to the source drive or NAS.

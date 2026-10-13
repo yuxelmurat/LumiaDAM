@@ -19,9 +19,10 @@ const GRID_COLS: Record<'sm' | 'md' | 'lg', number> = {
   lg: 280,
 };
 
-export function AssetGrid({ onPreviewAsset, onOpenEditorAsset }: {
+export function AssetGrid({ onPreviewAsset, onOpenEditorAsset, onOpenCadAsset }: {
   onPreviewAsset: (asset: Asset) => void;
   onOpenEditorAsset: (asset: Asset, editor?: EditorId) => void | Promise<void>;
+  onOpenCadAsset: (asset: Asset) => void;
 }) {
   const { viewMode, gridSize, selectedAssetIds, selectAsset, clearSelection } = useUIStore();
   const { assets, folders, folderTotal, loading, total, searchError, folderLoading, folderError, searchFolders, search, page, pageSize, setPage, query } = useAssetStore();
@@ -51,7 +52,7 @@ export function AssetGrid({ onPreviewAsset, onOpenEditorAsset }: {
   };
   const openAsset = async (asset: Asset) => {
     setContextMenu(null); setOpenError(null); selectAsset(asset.id);
-    try { await activateAsset(asset, onPreviewAsset, onOpenEditorAsset); }
+    try { await activateAsset(asset, onPreviewAsset, onOpenEditorAsset, onOpenCadAsset); }
     catch (error) { setOpenError(`Could not open ${asset.fileName}: ${String(error)}`); }
   };
   const [activeTab, setActiveTab] = useState<'files' | 'folders'>('files');
@@ -97,6 +98,8 @@ export function AssetGrid({ onPreviewAsset, onOpenEditorAsset }: {
           buttons[next]?.focus();
         }}>
         <button type="button" role="menuitem" onClick={() => void openAsset(contextMenu.asset)}>Open</button>
+        <button type="button" role="menuitem" disabled={!['dwg', 'dxf'].includes(contextMenu.asset.extension.toLowerCase())}
+          onClick={() => { const asset = contextMenu.asset; setContextMenu(null); onOpenCadAsset(asset); }}>Open in CAD Viewer</button>
         {(Object.keys(editors) as EditorId[]).map(editor => <button key={editor} type="button" role="menuitem" disabled={!canOpenInEditor(contextMenu.asset, editor)}
           onClick={() => {
             const asset = contextMenu.asset; setContextMenu(null); setOpenError(null);

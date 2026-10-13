@@ -35,7 +35,18 @@ test('PhotoEditor yalnız desteklenen görsel ve proje formatlarında etkin olur
   assert.equal(canOpenInEditor(null, 'photo'), false);
 });
 
+test('DWG ve DXF dosyaları dış uygulama yerine dahili CAD Viewer ile açılır', async () => {
+  const external = [], cad = [];
+  const { activateAsset } = setup(async path => external.push(path));
+  for (const extension of ['dwg', 'DXF']) {
+    const asset = { id: extension, extension, filePath: `A:/drawings/plan.${extension}` };
+    await activateAsset(asset, () => {}, () => {}, value => cad.push(value.id));
+  }
+  assert.deepEqual(cad, ['dwg', 'DXF']);
+  assert.deepEqual(external, []);
+});
+
 test('Windows açma hatası gizlenmez; arayüzün gösterebilmesi için döner', async () => {
   const { activateAsset } = setup(async () => { throw new Error('No default application'); });
-  await assert.rejects(() => activateAsset({ extension: 'max', filePath: 'A:/scene.max' }, () => {}, () => {}), /No default application/);
+  await assert.rejects(() => activateAsset({ extension: 'max', filePath: 'A:/scene.max' }, () => {}, () => {}, () => {}), /No default application/);
 });
