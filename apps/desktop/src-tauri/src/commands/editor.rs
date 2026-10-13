@@ -24,16 +24,16 @@ fn supported(extension: &str) -> bool {
 }
 
 #[derive(Clone, Copy)]
-enum Editor { Photo, Pdf, Vector }
+enum Editor { Photo, Pdf, Vector, Cad }
 impl Editor {
     fn parse(value: Option<&str>) -> Result<Self> {
         match value.unwrap_or("photo") {
-            "photo" => Ok(Self::Photo), "pdf" => Ok(Self::Pdf), "vector" => Ok(Self::Vector),
+            "photo" => Ok(Self::Photo), "pdf" => Ok(Self::Pdf), "vector" => Ok(Self::Vector), "cad" => Ok(Self::Cad),
             _ => Err("Unknown editor".into()),
         }
     }
     fn name(self) -> &'static str {
-        match self { Self::Photo => "PhotoCraft", Self::Pdf => "PdfCraft", Self::Vector => "VectorCraft" }
+        match self { Self::Photo => "PhotoCraft", Self::Pdf => "PdfCraft", Self::Vector => "VectorCraft", Self::Cad => "CAD Viewer" }
     }
     fn supports(self, extension: &str, output: bool) -> bool {
         match self {
@@ -41,6 +41,7 @@ impl Editor {
             Self::Pdf => extension == "pdf",
             Self::Vector => matches!(extension, "svg" | "svgz" | "pdf" | "vectorcraft" | "jpg" | "jpeg" | "png" | "webp") ||
                 (!output && matches!(extension, "ai" | "drawcraft" | "bmp" | "tif" | "tiff" | "gif")),
+            Self::Cad => !output && matches!(extension, "dwg" | "dxf"),
         }
     }
 }
@@ -78,7 +79,8 @@ async fn source(state: &AppState, id: &str, editor: Editor) -> Result<(LibraryHa
 
 #[tauri::command]
 pub async fn read_editor_asset(id: String, editor: Option<String>, state: State<'_, Arc<AppState>>) -> Result<Response> {
-    let (_, path) = source(&state, &id, Editor::parse(editor.as_deref())?).await?;
+    let editor = Editor::parse(editor.as_deref())?;
+    let (_, path) = source(&state, &id, editor).await?;
     let bytes = tokio::task::spawn_blocking(move || {
         use std::io::Read;
         let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
@@ -87,7 +89,7 @@ pub async fn read_editor_asset(id: String, editor: Option<String>, state: State<
             .read_to_end(&mut bytes)
             .map_err(|e| e.to_string())?;
         if bytes.is_empty() || bytes.len() > MAX_BYTES {
-            return Err("Editor supports files up to 256 MB".into());
+            return Err(format!("{} supports files up to 256 MB", editor.name()));
         }
         Ok::<Vec<u8>, String>(bytes)
     })
@@ -241,7 +243,10 @@ mod tests {
         assert!(Editor::Vector.supports("ai", false));
         assert!(Editor::Vector.supports("vectorcraft", true));
         assert!(!Editor::Vector.supports("ai", true));
-        for editor in [Editor::Photo, Editor::Pdf, Editor::Vector] {
+        assert!(Editor::Cad.supports("dwg", false));
+        assert!(Editor::Cad.supports("dxf", false));
+        assert!(!Editor::Cad.supports("dwg", true));
+        for editor in [Editor::Photo, Editor::Pdf, Editor::Vector, Editor::Cad] {
             for ext in ["exe", "../pdf", "zip", "", "png/../../file"] {
                 assert!(!editor.supports(ext, false));
                 assert!(!editor.supports(ext, true));

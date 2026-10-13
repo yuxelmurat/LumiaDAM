@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { exavViewer } from '@exav/viewer/vite';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 
@@ -9,7 +10,7 @@ const __dirname = dirname(__filename);
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig(async () => ({
-  plugins: [react()],
+  plugins: [react(), exavViewer()],
   clearScreen: false,
   server: {
     port: 1420,

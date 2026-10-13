@@ -93,6 +93,7 @@
 }
 
 .appMenu button:hover { background: var(--color-bg-overlay); color: var(--color-text-primary); }
+.appMenu button:disabled { opacity: .42; cursor: default; }
 .appMenu button:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: -2px; }
 .appMenu .menuItemActive { color: var(--color-brand-300); background: hsl(220 85% 50% / 0.12); }
 .menuDivider { height: 1px; margin: 5px 8px; background: var(--color-border); }

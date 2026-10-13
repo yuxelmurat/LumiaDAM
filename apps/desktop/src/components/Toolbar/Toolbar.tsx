@@ -7,23 +7,28 @@ import {
   IconGrid, IconList, IconSearch, IconSidebar,
   IconPanel, IconRefresh, IconPlus,
   IconMenu, IconFolder, IconImage, IconSettings,
-  IconFileText, IconInfo, IconX,
+  IconFileText, IconInfo, IconX, IconLayers,
 } from '../Icons';
 import styles from './Toolbar.module.css';
 import clsx from 'clsx';
 import { StorageSettings } from '../StorageSettings';
 import { AppInformation, type InformationPage } from '../AppInformation';
 import { editors, type EditorId } from '../Editor/editors';
+import type { Asset } from '../../types';
+
+export type WorkspaceId = 'library' | EditorId | 'cad';
 
 interface ToolbarProps {
-  workspace: 'library' | EditorId;
+  workspace: WorkspaceId;
   editorBusy?: boolean;
   onCloseEditor?: () => void;
   onOpenLibraries: () => void;
   onOpenEditor: (editor: EditorId) => void;
+  onOpenCad: () => void;
+  focusedAsset: Asset | null;
 }
 
-export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries, onOpenEditor }: ToolbarProps) {
+export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries, onOpenEditor, onOpenCad, focusedAsset }: ToolbarProps) {
   const { viewMode, gridSize, sidebarOpen, detailPanelOpen,
           setViewMode, setGridSize, toggleSidebar, toggleDetailPanel } = useUIStore();
   const { query, setQuery, search, loading } = useAssetStore();
@@ -115,7 +120,7 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
           onClick={() => setMenuOpen((open) => !open)}
         >
           <img className={styles.logo} src="/brand/lumiadam-mark.png" alt="" />
-          <span className={styles.appName}>{workspace === 'library' ? 'LumiaDAM' : editors[workspace].title}</span>
+          <span className={styles.appName}>{workspace === 'library' ? 'LumiaDAM' : workspace === 'cad' ? 'CAD Viewer' : editors[workspace].title}</span>
           <IconMenu size={17} className={styles.menuIcon} />
         </button>
         {menuOpen && (
@@ -127,6 +132,10 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
               className={workspace === editor ? styles.menuItemActive : undefined} onClick={() => choose(() => onOpenEditor(editor))}>
               {editor === 'pdf' ? <IconFileText size={17} /> : <IconImage size={17} />}<span>{editors[editor].title}</span>
             </button>)}
+            <button type="button" role="menuitem" disabled={!focusedAsset || !['dwg', 'dxf'].includes(focusedAsset.extension.toLowerCase())}
+              className={workspace === 'cad' ? styles.menuItemActive : undefined} onClick={() => choose(onOpenCad)}>
+              <IconLayers size={17} /><span>CAD Viewer</span>
+            </button>
             <div className={styles.menuDivider} />
             <button type="button" role="menuitem" onClick={() => choose(() => setStorageOpen(true))}>
               <IconSettings size={17} /><span>Settings</span>
