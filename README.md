@@ -49,6 +49,17 @@ Search for `living corona` and find an asset through its folder path even when i
 | **See background work** | The activity panel reports scanning and preview progress, remaining work, failures, last scan time, and a rescan action. |
 | **Open files the way Windows expects** | Double-click or use the context menu to open a file in its associated desktop application. Use built-in workspaces for supported image, PDF, vector, and CAD files. |
 
+### LumiaDAM'in sundukları (Türkçe)
+
+- Yerel disk, harici disk ve NAS kütüphanelerini tarar; dosya adıyla birlikte tüm klasör yolunda arama yapar.
+- Yıl, kaynak, mahal, yazılım, renderer ve dosya türü filtreleriyle derin klasör yapılarında gezinmeyi kolaylaştırır.
+- Veritabanını ve küçük resimleri kaynak kütüphaneden ayrı tutar; NAS çevrimdışıyken önbellekteki verileri göstermeye devam eder.
+- JPG/JPEG, PNG, HDR ve EXR gibi görselleri önizler; aynı klasördeki render görselini ZIP veya model dosyasıyla ilişkilendirebilir.
+- Fotoğraf, PDF, vektör ve CAD için PhotoEditor, PDFEditor, VectorEditor ve CAD Viewer çalışma alanları sunar.
+- Favori, puan, renk etiketi, etiket, koleksiyon, akıllı filtre, proje panosu ve dosya karşılaştırma araçları sağlar.
+- İsteğe bağlı yerel yapay zekâ, kullanıcı incelemesi için gruplama önerileri üretir; deneysel Max birleştirme iş akışı arşivdeki modeli açık sahneye taşımayı hedefler.
+- Tarama, önizleme, kalan işler ve kaynak erişim durumunu etkinlik panelinde gösterir.
+
 ### Formats and previews
 
 LumiaDAM catalogs files even when it cannot render a preview. Preview and editing support depend on file encoding, installed Windows providers, and the selected editor; indexing a format does not mean LumiaDAM fully parses or edits it.
