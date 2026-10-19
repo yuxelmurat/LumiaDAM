@@ -118,7 +118,7 @@ libraries/<name>--<id>/
   thumbs/
 ```
 
-See the [storage and migration guide](docs/storage.md), [offline preview notes](docs/offline-previews.md), and [folder search guide](docs/folder-search.md).
+See the [storage and migration guide](docs/storage.md) and the [folder search guide](docs/folder-search.md).
 
 ## Availability and development status
 
