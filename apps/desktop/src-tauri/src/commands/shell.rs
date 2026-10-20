@@ -51,6 +51,10 @@ fn validated_file_path(file_path: &str) -> Result<std::path::PathBuf> {
     if file_path.contains('\0') { return Err("Invalid file path".into()); }
     #[cfg(target_os = "windows")]
     let file_path = file_path.replace('/', "\\");
+    // ShellExecute, canonicalize'ın eklediği uzun yol önekini her dosya ilişkilendirmesinde kabul etmez.
+    #[cfg(target_os = "windows")]
+    let file_path = file_path.strip_prefix("\\\\?\\UNC\\").map(|path|format!("\\\\{path}"))
+        .unwrap_or_else(||file_path.strip_prefix("\\\\?\\").unwrap_or(&file_path).to_string());
     let path = std::path::PathBuf::from(file_path);
     if !path.is_absolute() || !path.is_file() {
         return Err("The file is unavailable or its path is not an absolute file path".into());
@@ -112,6 +116,8 @@ mod tests {
         let path = folder.join("kitchen & render %1 [9].zip");
         std::fs::write(&path,b"test").unwrap();
         assert_eq!(validated_file_path(path.to_str().unwrap()).unwrap(),path);
+        #[cfg(windows)]
+        assert_eq!(validated_file_path(path.canonicalize().unwrap().to_str().unwrap()).unwrap(),path);
         std::fs::remove_dir_all(folder).unwrap();
     }
 }

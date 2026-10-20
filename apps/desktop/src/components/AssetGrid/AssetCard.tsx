@@ -1,3 +1,4 @@
+import { t as tr, useTranslation } from '../../i18n';
 import { memo, useCallback, useState, useEffect, useMemo } from 'react';
 import clsx from 'clsx';
 import { convertFileSrc } from '@tauri-apps/api/core';
@@ -9,6 +10,7 @@ import styles from './AssetCard.module.css';
 export interface AssetCardProps {
   asset: Asset;
   selected: boolean;
+  grouped?: boolean;
   onClick: (asset: Asset, e: React.MouseEvent) => void;
 }
 
@@ -37,15 +39,17 @@ const KIND_COLOR: Record<AssetKind, string> = {
 };
 
 export const AssetCard = memo(function AssetCard({
-  asset, selected, onClick,
+  asset, selected, onClick, grouped = false,
 }: AssetCardProps) {
+  useTranslation();
   const [imgError, setImgError] = useState(false);
   const [relatedError, setRelatedError] = useState(false);
   const patchAsset = useAssetStore((s) => s.patchAsset);
+  const displayImage = grouped && (asset.groupFiles?.length ?? 0) > 1 && asset.relatedImage?.thumbnailPath ? asset.relatedImage.thumbnailPath : asset.thumbnailPath;
 
   useEffect(() => {
     setImgError(false);
-  }, [asset.thumbnailPath, asset.filePath]);
+  }, [displayImage, asset.filePath]);
 
   useEffect(() => {
     setRelatedError(false);
@@ -126,11 +130,11 @@ export const AssetCard = memo(function AssetCard({
       tabIndex={0}
     >
       {/* Thumbnail / preview area */}
-      <div className={styles.thumb} data-preview-id={!asset.thumbnailPath ? asset.id : undefined}
+      <div className={styles.thumb} data-preview-id={!displayImage ? grouped && asset.relatedImage?.id ? asset.relatedImage.id : asset.id : undefined}
         data-preview-key={`${asset.id}:${asset.modifiedAt}`}>
-        {asset.thumbnailPath && !asset.thumbnailPath.endsWith('.glb') && !imgError ? (
+        {displayImage && !displayImage.endsWith('.glb') && !imgError ? (
           <img
-            src={convertFileSrc(asset.thumbnailPath)}
+            src={convertFileSrc(displayImage)}
             alt={asset.fileName}
             className={styles.thumbImg}
             loading="lazy"
@@ -152,17 +156,17 @@ export const AssetCard = memo(function AssetCard({
           <div className={clsx(styles.previewBadge, styles.error)}>!</div>
         )}
 
-        {asset.relatedImage && (
-          <div className={styles.relatedImage} title={`Related image: ${asset.relatedImage.fileName}`}
+        {asset.relatedImage && !(displayImage && displayImage === asset.relatedImage.thumbnailPath) && (
+          <div className={styles.relatedImage} title={tr("Related image: {p0}", { p0: asset.relatedImage.fileName })}
             data-preview-id={!asset.relatedImage.thumbnailPath ? asset.relatedImage.id : undefined}
             data-preview-key={`related:${asset.relatedImage.id}:${asset.relatedImage.filePath}`}>
             {asset.relatedImage.thumbnailPath && !relatedError ? <img
               src={convertFileSrc(asset.relatedImage.thumbnailPath)}
-              alt={`Related image: ${asset.relatedImage.fileName}`}
+              alt={tr("Related image: {p0}", { p0: asset.relatedImage.fileName })}
               loading="lazy"
               onError={() => setRelatedError(true)}
             /> : <div className={styles.relatedPending}><IconImage size={20} /></div>}
-            <span>Related image</span>
+            <span>{tr("Related image")}</span>
           </div>
         )}
 
@@ -172,8 +176,8 @@ export const AssetCard = memo(function AssetCard({
           type="button"
           className={clsx(styles.favoriteBtn, asset.isFavorite && styles.favoriteActive)}
           onClick={handleToggleFavorite}
-          title={asset.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-          aria-label={asset.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+          title={asset.isFavorite ? tr("Remove from favorites") : tr("Add to favorites")}
+          aria-label={asset.isFavorite ? tr("Remove from favorites") : tr("Add to favorites")}
         >
           {asset.isFavorite ? (
             <IconHeartFilled size={13} className={styles.favoriteHeartFilled} />
@@ -204,6 +208,8 @@ export const AssetCard = memo(function AssetCard({
         </p>
         <p className={styles.filePath}>{asset.filePath}</p>
         <div className={styles.meta}>
+          {grouped && (asset.groupFiles?.length ?? 0) > 1 && <span title={tr("Open the Workflow tab to use the model, archive or image")}>{asset.groupFiles!.length} {tr("files")}</span>}
+          {asset.offlinePath && <span title={asset.offlinePath}>{asset.offlineStale ? tr("Offline copy outdated") : tr("Offline")}</span>}
           {asset.rating > 0 && (
             <div className={styles.stars}>
               {Array.from({ length: 5 }).map((_, i) => (
@@ -235,7 +241,7 @@ export const AssetCard = memo(function AssetCard({
                   styles.chip,
                   chip.type === 'collection' ? styles.collectionChip : styles.tagChip
                 )}
-                title={chip.type === 'collection' ? `Collection: ${chip.name}` : `Tag: ${chip.name}`}
+                title={chip.type === 'collection' ? tr("Collection: {p0}", { p0: chip.name }) : `Tag: ${chip.name}`}
               >
                 {chip.type === 'collection' ? (
                   <IconCollection size={9} className={styles.chipIcon} />

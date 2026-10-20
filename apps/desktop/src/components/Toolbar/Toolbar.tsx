@@ -1,3 +1,4 @@
+import { t as tr, useTranslation } from '../../i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useUIStore, useAssetStore, useLibraryStore } from '../../store';
 import { api } from '../../api';
@@ -13,10 +14,10 @@ import styles from './Toolbar.module.css';
 import clsx from 'clsx';
 import { StorageSettings } from '../StorageSettings';
 import { AppInformation, type InformationPage } from '../AppInformation';
-import { editors, type EditorId } from '../Editor/editors';
+import { canOpenInEditor, editors, type EditorId } from '../Editor/editors';
 import type { Asset } from '../../types';
 
-export type WorkspaceId = 'library' | EditorId | 'cad';
+export type WorkspaceId = 'library' | EditorId | 'cad' | 'local-ai';
 
 interface ToolbarProps {
   workspace: WorkspaceId;
@@ -25,10 +26,12 @@ interface ToolbarProps {
   onOpenLibraries: () => void;
   onOpenEditor: (editor: EditorId) => void;
   onOpenCad: () => void;
+  onOpenLocalAi: () => void;
   focusedAsset: Asset | null;
 }
 
-export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries, onOpenEditor, onOpenCad, focusedAsset }: ToolbarProps) {
+export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries, onOpenEditor, onOpenCad, onOpenLocalAi, focusedAsset }: ToolbarProps) {
+  useTranslation();
   const { viewMode, gridSize, sidebarOpen, detailPanelOpen,
           setViewMode, setGridSize, toggleSidebar, toggleDetailPanel } = useUIStore();
   const { query, setQuery, search, loading } = useAssetStore();
@@ -66,7 +69,7 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
       // Normal kapanış isteği, editörün kaydedilmemiş değişiklik kontrolünü korur.
       await getCurrentWindow().close();
     } catch (reason) {
-      await message(`Could not close LumiaDAM: ${String(reason)}`, { title: 'Exit LumiaDAM', kind: 'error' }).catch(console.error);
+      await message(tr("Could not close LumiaDAM: {p0}", { p0: String(reason) }), { title: tr("Exit LumiaDAM"), kind: 'error' }).catch(console.error);
     }
   };
 
@@ -87,7 +90,7 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
       const selectedPath = await open({
         directory: true,
         multiple: false,
-        title: 'Select Library Folder'
+        title: tr("Select Library Folder")
       });
       if (selectedPath && typeof selectedPath === 'string') {
         await addLibrary([selectedPath]);
@@ -114,45 +117,50 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
           ref={menuTrigger}
           type="button"
           className={styles.brandTrigger}
-          aria-label="Open LumiaDAM menu"
+          aria-label={tr("Open LumiaDAM menu")}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((open) => !open)}
         >
           <img className={styles.logo} src="/brand/lumiadam-mark.png" alt="" />
-          <span className={styles.appName}>{workspace === 'library' ? 'LumiaDAM' : workspace === 'cad' ? 'CAD Viewer' : editors[workspace].title}</span>
+          <span className={styles.appName}>{workspace === 'library' ? 'LumiaDAM' : workspace === 'cad' ? tr("CAD Viewer") : workspace === 'local-ai' ? tr("Local AI") : tr(editors[workspace].title)}</span>
           <IconMenu size={17} className={styles.menuIcon} />
         </button>
         {menuOpen && (
-          <div className={styles.appMenu} role="menu" aria-label="LumiaDAM navigation">
+          <div className={styles.appMenu} role="menu" aria-label={tr("LumiaDAM navigation")}>
             <button type="button" role="menuitem" className={workspace === 'library' ? styles.menuItemActive : undefined} onClick={() => choose(onOpenLibraries)}>
-              <IconFolder size={17} /><span>Libraries</span>
+              <IconFolder size={17} /><span>{tr("Libraries")}</span>
             </button>
             {(Object.keys(editors) as EditorId[]).map(editor => <button key={editor} type="button" role="menuitem"
+              disabled={!focusedAsset || !canOpenInEditor(focusedAsset, editor)}
               className={workspace === editor ? styles.menuItemActive : undefined} onClick={() => choose(() => onOpenEditor(editor))}>
-              {editor === 'pdf' ? <IconFileText size={17} /> : <IconImage size={17} />}<span>{editors[editor].title}</span>
+              {editor === 'cadcraft' ? <IconLayers size={17} /> : editor === 'pdf' ? <IconFileText size={17} /> : <IconImage size={17} />}<span>{tr(editors[editor].title)}</span>
             </button>)}
             <button type="button" role="menuitem" disabled={!focusedAsset || !['dwg', 'dxf'].includes(focusedAsset.extension.toLowerCase())}
               className={workspace === 'cad' ? styles.menuItemActive : undefined} onClick={() => choose(onOpenCad)}>
-              <IconLayers size={17} /><span>CAD Viewer</span>
+              <IconLayers size={17} /><span>{tr("CAD Viewer")}</span>
             </button>
             <div className={styles.menuDivider} />
+            <button type="button" role="menuitem" className={workspace === 'local-ai' ? styles.menuItemActive : undefined}
+              onClick={() => choose(onOpenLocalAi)}>
+              <IconLayers size={17} /><span>{tr("Local AI")}</span>
+            </button>
             <button type="button" role="menuitem" onClick={() => choose(() => setStorageOpen(true))}>
-              <IconSettings size={17} /><span>Settings</span>
+              <IconSettings size={17} /><span>{tr("Settings")}</span>
             </button>
             <div className={styles.menuDivider} role="separator" />
             <button type="button" role="menuitem" onClick={() => choose(() => setInformationPage('help'))}>
-              <IconFileText size={17} /><span>Help</span>
+              <IconFileText size={17} /><span>{tr("Help")}</span>
             </button>
             <button type="button" role="menuitem" onClick={() => choose(() => setInformationPage('about'))}>
-              <IconInfo size={17} /><span>About</span>
+              <IconInfo size={17} /><span>{tr("About")}</span>
             </button>
             <button type="button" role="menuitem" onClick={() => choose(() => setInformationPage('faq'))}>
-              <IconInfo size={17} /><span>FAQ</span>
+              <IconInfo size={17} /><span>{tr("FAQ")}</span>
             </button>
             <div className={styles.menuDivider} role="separator" />
             <button type="button" role="menuitem" onClick={() => choose(handleExit)}>
-              <IconX size={17} /><span>Exit</span>
+              <IconX size={17} /><span>{tr("Exit")}</span>
             </button>
           </div>
         )}
@@ -168,8 +176,8 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
           )}
           title={
             query.includeSubcollections !== false
-              ? 'Filtering includes child collections (Click to filter selected collection only)'
-              : 'Filtering only includes selected collection (Click to include children too)'
+              ? tr("Filtering includes child collections (Click to filter selected collection only)")
+              : tr("Filtering only includes selected collection (Click to include children too)")
           }
         >
           <input
@@ -189,7 +197,7 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
               </svg>
             )}
           </span>
-          <span className={styles.subcollectionsCheckboxText}>Include subcollections</span>
+          <span className={styles.subcollectionsCheckboxText}>{tr("Include subcollections")}</span>
         </label>
 
         {/* Search bar */}
@@ -198,11 +206,11 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
           <input
             id="toolbar-search"
             type="search"
-            placeholder="Search files and folders…"
+            placeholder={tr("Search files and folders…")}
             className={styles.searchInput}
             value={query.text}
             onChange={handleSearch}
-            aria-label="Search files and folders"
+            aria-label={tr("Search files and folders")}
           />
           {loading && <div className={clsx(styles.spinner, 'animate-spin')} />}
         </div>
@@ -219,7 +227,7 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
                 id={`grid-size-${size}`}
                 className={clsx(styles.iconBtn, gridSize === size && styles.active)}
                 onClick={() => setGridSize(size)}
-                title={`Grid size: ${size}`}
+                title={tr("Grid size: {p0}", { p0: size })}
               >
                 <span className={styles.gridSizeDot} style={{ fontSize: size === 'sm' ? 8 : size === 'md' ? 10 : 12 }}>⬛</span>
               </button>
@@ -233,7 +241,7 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
             id="view-grid"
             className={clsx(styles.iconBtn, viewMode === 'grid' && styles.active)}
             onClick={() => setViewMode('grid')}
-            title="Grid view"
+            title={tr("Grid view")}
           >
             <IconGrid />
           </button>
@@ -241,7 +249,7 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
             id="view-list"
             className={clsx(styles.iconBtn, viewMode === 'list' && styles.active)}
             onClick={() => setViewMode('list')}
-            title="List view"
+            title={tr("List view")}
           >
             <IconList />
           </button>
@@ -253,7 +261,7 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
           id="toggle-sidebar"
           className={clsx(styles.iconBtn, !sidebarOpen && styles.dimmed)}
           onClick={toggleSidebar}
-          title="Toggle sidebar"
+          title={tr("Toggle sidebar")}
         >
           <IconSidebar />
         </button>
@@ -261,7 +269,7 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
           id="toggle-detail"
           className={clsx(styles.iconBtn, !detailPanelOpen && styles.dimmed)}
           onClick={toggleDetailPanel}
-          title="Toggle detail panel"
+          title={tr("Toggle detail panel")}
         >
           <IconPanel />
         </button>
@@ -272,7 +280,7 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
           id="refresh-library"
           className={styles.iconBtn}
           onClick={handleRefresh}
-          title="Refresh and scan libraries"
+          title={tr("Refresh and scan libraries")}
         >
           <IconRefresh className={loading || isRefreshing ? 'animate-spin' : undefined} />
         </button>
@@ -280,17 +288,17 @@ export function Toolbar({ workspace, editorBusy, onCloseEditor, onOpenLibraries,
         <button
           id="add-library"
           className={styles.primaryBtn}
-          title="Add Library"
+          title={tr("Add Library")}
           onClick={handleAddLibrary}
         >
           <IconPlus />
-          <span>Add Library</span>
+          <span>{tr("Add Library")}</span>
         </button>
       </div>
       </> : (
         <div className={styles.editorControls}>
-          <button type="button" onClick={onOpenLibraries} title="Return to Libraries; keep the editor session open"><IconFolder size={14} /> Libraries</button>
-          {onCloseEditor && <button type="button" onClick={onCloseEditor} disabled={editorBusy} title="Close editor"><IconX size={14} /> Close editor</button>}
+          <button type="button" onClick={onOpenLibraries} title={tr("Return to Libraries; keep the editor session open")}><IconFolder size={14} /> {tr("Libraries")}</button>
+          {onCloseEditor && <button type="button" onClick={onCloseEditor} disabled={editorBusy} title={tr("Close editor")}><IconX size={14} /> {tr("Close editor")}</button>}
         </div>
       )}
     </header>

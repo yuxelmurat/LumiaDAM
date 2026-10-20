@@ -120,6 +120,7 @@ pub async fn connect_library_sqlite(db_path: &Path) -> Result<Pool<Sqlite>> {
     crate::folders::initialize(&pool).await?;
     crate::preview::initialize(&pool).await?;
     crate::search_index::initialize(&pool).await?;
+    crate::workflow::initialize(&pool).await?;
     Ok(pool)
 }
 
@@ -170,6 +171,8 @@ impl Database {
         let _ = sqlx::query(include_str!("../migrations/002_library_schema.sql"))
             .execute(&master_pool)
             .await;
+        sqlx::query("CREATE TABLE IF NOT EXISTS project_notes(collection_id TEXT NOT NULL,asset_id TEXT NOT NULL,note TEXT NOT NULL DEFAULT '',PRIMARY KEY(collection_id,asset_id)); CREATE TRIGGER IF NOT EXISTS project_notes_cleanup AFTER DELETE ON collections BEGIN DELETE FROM project_notes WHERE collection_id=old.id; END;")
+            .execute(&master_pool).await?;
 
         let _ = sqlx::query("ALTER TABLE assets ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0")
             .execute(&master_pool)
@@ -279,6 +282,18 @@ impl Database {
 
         // Sync metadata immediately
         self.sync_library_metadata(&lib_pool).await;
+
+        // Sayacı yalnız yerel katalogdan tamamla; NAS bağlı olmasa da önceden indekslenen kayıtlar görünür.
+        let stored_count: i64 = sqlx::query_scalar("SELECT asset_count FROM libraries WHERE id = ?")
+            .bind(id).fetch_optional(&self.master_pool).await?.unwrap_or(0);
+        if stored_count == 0 {
+            let catalog_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM assets")
+                .fetch_one(&lib_pool).await?;
+            if catalog_count > 0 {
+                sqlx::query("UPDATE libraries SET asset_count = ? WHERE id = ?")
+                    .bind(catalog_count).bind(id).execute(&self.master_pool).await?;
+            }
+        }
 
         let handle = LibraryHandle {
             id: id.to_string(),

@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS collection_assets (
     asset_id       TEXT NOT NULL REFERENCES assets(id)      ON DELETE CASCADE,
     PRIMARY KEY (collection_id, asset_id)
 );
+CREATE INDEX IF NOT EXISTS idx_collection_assets_asset ON collection_assets(asset_id, collection_id);
 
 -- ── Preview jobs ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS preview_jobs (

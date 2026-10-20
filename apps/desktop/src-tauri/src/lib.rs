@@ -6,6 +6,10 @@ pub mod preview;
 pub mod search_index;
 pub mod storage;
 pub mod folders;
+pub mod workflow;
+pub mod duplicates;
+pub mod local_ai;
+pub mod preferences;
 #[cfg(windows)]
 pub mod windows_thumbnail;
 
@@ -38,9 +42,14 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             let legacy_master = app.path().app_data_dir()?.join("opendam.sqlite");
-            let local_dir = dirs::data_local_dir()
-                .ok_or("Local application data folder was not found")?.join("LumiaDAM");
+            let local_dir = if let Some(path) = std::env::var_os("LUMIADAM_TEST_DATA_DIR") {
+                // Açılış kontrolünde gerçek kullanıcı kataloğuna dokunmadan aynı uygulamayı çalıştır.
+                let path=std::path::PathBuf::from(path);
+                if !path.is_absolute() || !path.join("data/opendam.sqlite").is_file() {return Err("Diagnostic catalog must be an existing absolute path".into());}
+                path
+            } else {dirs::data_local_dir().ok_or("Local application data folder was not found")?.join("LumiaDAM")};
             let data_dir = local_dir.join("data");
+            tracing::info!(path = %data_dir.display(), "Opening local catalog");
             std::fs::create_dir_all(&data_dir)?;
             let db_path = data_dir.join("opendam.sqlite");
             let rt = tokio::runtime::Runtime::new()?;
@@ -65,6 +74,7 @@ pub fn run() {
             });
 
             app.manage(state.clone());
+            crate::local_ai::resume_configured_schedule(state.clone());
             
             // Start the background preview worker queue
             crate::preview::start_preview_worker(state.clone());
@@ -75,6 +85,23 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            preferences::get_app_language,
+            preferences::set_app_language,
+            local_ai::get_local_ai_settings,
+            local_ai::save_local_ai_settings,
+            local_ai::get_local_ai_status,
+            local_ai::get_local_ai_log,
+            local_ai::open_local_ai_log,
+            local_ai::start_local_ai,
+            local_ai::stop_local_ai,
+            local_ai::prepare_local_ai_model,
+            local_ai::list_ai_suggestions,
+            local_ai::apply_ai_suggestion,
+            local_ai::apply_all_ai_suggestions,
+            local_ai::dismiss_ai_suggestion,
+            commands::max_bridge::get_max_instances,
+            commands::max_bridge::merge_to_max,
+            commands::max_bridge::get_max_merge_status,
             commands::editor::read_editor_asset,
             commands::editor::save_editor_export,
             commands::library::get_storage_settings,
@@ -104,6 +131,19 @@ pub fn run() {
             commands::preview::get_preview_jobs,
             commands::shell::reveal_in_explorer,
             commands::shell::open_with_default,
+            commands::workflow::get_path_facets,
+            commands::workflow::set_path_labels,
+            commands::workflow::set_related_image,
+            commands::workflow::list_related_images,
+            commands::workflow::resolve_asset_file,
+            commands::workflow::keep_offline,
+            commands::workflow::remove_offline,
+            commands::workflow::get_project_notes,
+            commands::workflow::save_project_note,
+            commands::workflow::update_project,
+            commands::workflow::check_asset_availability,
+            commands::workflow::find_duplicates,
+            commands::workflow::cancel_duplicate_scan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -195,9 +195,11 @@ interface AssetStore {
   updateAssetPreview: (id: string, thumbnailPath?: string, previewModel?: string) => void;
   setPreviewStatus: (id: string, status: Asset['previewStatus']) => void;
   getById: (id: string) => Asset | undefined;
+  rememberAsset: (asset: Asset) => void;
 }
 
 const defaultQuery: SearchQuery = {
+  groupRelated: true,
   text: '',
   filter: {},
   sort: { field: 'date', order: 'desc' },
@@ -241,6 +243,7 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
   folderLoading: false,
   folderError: null,
   query: defaultQuery,
+  rememberAsset: (asset) => set((s) => ({ assets: s.assets.map((a) => a.id === asset.id ? asset : a), assetMap: new Map(s.assetMap).set(asset.id, asset) })),
   assetMap: new Map(),
 
   setQuery: (q) => set((s) => {
@@ -411,7 +414,11 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
   updateAssetPreview: (id, thumbnailPath, previewModel) => {
     set((s) => {
       let changed = false;
-      const assets = s.assets.map((asset) => {
+      const update = (asset: Asset) => {
+        if (thumbnailPath && asset.groupFiles?.some(file => file.id === id)) {
+          changed = true;
+          asset = { ...asset, groupFiles: asset.groupFiles.map(file => file.id === id ? { ...file, thumbnailPath } : file) };
+        }
         if (asset.id === id) {
           changed = true;
           return { ...asset, thumbnailPath: thumbnailPath || asset.thumbnailPath, previewStatus: 'done' as const,
@@ -422,8 +429,11 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
           return { ...asset, relatedImage: { ...asset.relatedImage, thumbnailPath } };
         }
         return asset;
-      });
-      return changed ? { assets, assetMap: new Map(assets.map((asset) => [asset.id, asset])) } : s;
+      };
+      const assetMap = new Map(s.assetMap);
+      for (const [key, asset] of assetMap) assetMap.set(key, update(asset));
+      const assets = s.assets.map(asset => assetMap.get(asset.id) ?? update(asset));
+      return changed ? { assets, assetMap } : s;
     });
   },
 

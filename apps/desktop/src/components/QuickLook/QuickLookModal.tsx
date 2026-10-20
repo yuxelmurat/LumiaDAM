@@ -1,3 +1,4 @@
+import { t as tr, useTranslation, translateMessage } from '../../i18n';
 import { memo, useRef, useState, useEffect } from 'react';
 import clsx from 'clsx';
 import { convertFileSrc } from '@tauri-apps/api/core';
@@ -5,6 +6,7 @@ import type { Asset } from '../../types';
 import { ThreeViewer } from '../DetailPanel/ThreeViewer';
 import { IconStar, IconModel3D, IconImage, IconVideo, IconFileText, IconX } from '../Icons';
 import styles from './QuickLookModal.module.css';
+import { api } from '../../api';
 
 interface QuickLookModalProps {
   asset: Asset | null;
@@ -21,7 +23,8 @@ const VIDEO_STEPS = [
   { label: '100%', factor: 1.0 },
 ];
 
-function VideoQuickLook({ filePath }: { filePath: string }) {
+function VideoQuickLook({ filePath, onError }: { filePath: string; onError: () => void }) {
+  useTranslation();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [activeStep, setActiveStep] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
@@ -78,6 +81,7 @@ function VideoQuickLook({ filePath }: { filePath: string }) {
         className={styles.largeVideo}
         onLoadedMetadata={handleLoadedMetadata}
         onTimeUpdate={handleTimeUpdate}
+        onError={onError}
       />
       <div className={styles.videoTimelineOverlay}>
         <div className={styles.stepPills}>
@@ -92,7 +96,7 @@ function VideoQuickLook({ filePath }: { filePath: string }) {
                   videoRef.current.currentTime = target;
                 }
               }}
-              title={`Jump to ${st.label}`}
+              title={tr("Jump to {p0}", { p0: st.label })}
             >
               <span className={styles.stepDot} />
               <span>{st.label}</span>
@@ -113,7 +117,20 @@ export const QuickLookModal = memo(function QuickLookModal({
   persistent = false,
   onClose,
 }: QuickLookModalProps) {
+  useTranslation();
   const closeButton = useRef<HTMLButtonElement>(null);
+  const [sourcePath, setSourcePath] = useState<string | null>(null);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+  const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => {
+    setSourcePath(null); setSourceError(null); setImageFailed(false);
+    if (!isOpen || !asset || !['jpg','jpeg','png','webp','bmp','gif','svg','avif','mp4','webm','mov','mkv','avi'].includes(asset.extension.toLowerCase())) return;
+    let cancelled = false;
+    void api.resolveAssetFile(asset.id).then(path => { if (!cancelled) setSourcePath(path); })
+      .catch(error => { if (!cancelled) setSourceError(String(error)); });
+    return () => { cancelled = true; };
+  }, [isOpen, asset?.id, asset?.modifiedAt, retry]);
   useEffect(() => {
     if (!isOpen || !persistent) return;
     const previous = document.activeElement as HTMLElement | null;
@@ -135,11 +152,9 @@ export const QuickLookModal = memo(function QuickLookModal({
   );
 
   const imagePath = isNativeImg
-    ? asset.filePath
+    ? sourcePath ?? asset.thumbnailPath
     : asset.thumbnailPath && !asset.thumbnailPath.endsWith('.glb')
     ? asset.thumbnailPath
-    : ['image', 'texture'].includes(asset.kind)
-    ? asset.filePath
     : undefined;
 
   const formatSize = (bytes: number): string => {
@@ -150,7 +165,7 @@ export const QuickLookModal = memo(function QuickLookModal({
   };
 
   return (
-    <div className={styles.overlay} aria-modal="true" role="dialog" aria-label={`Preview: ${asset.fileName}`}
+    <div className={styles.overlay} aria-modal="true" role="dialog" aria-label={tr("Preview: {p0}", { p0: asset.fileName })}
       onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
       onKeyDown={(event) => {
         if (event.key === 'Escape') { event.stopPropagation(); onClose(); }
@@ -174,7 +189,7 @@ export const QuickLookModal = memo(function QuickLookModal({
               <span
                 className={styles.colorDot}
                 style={{ background: `var(--swatch-${asset.colorLabel})` }}
-                title={`Label: ${asset.colorLabel}`}
+                title={tr("Label: {p0}", { p0: tr(asset.colorLabel) })}
               />
             )}
             {asset.rating > 0 && (
@@ -185,7 +200,7 @@ export const QuickLookModal = memo(function QuickLookModal({
               </div>
             )}
             <span className={styles.sizeBadge}>{formatSize(asset.sizeBytes)}</span>
-            <button ref={closeButton} type="button" className={styles.closeButton} onClick={onClose} aria-label="Close preview"><IconX size={18} /></button>
+            <button ref={closeButton} type="button" className={styles.closeButton} onClick={onClose} aria-label={tr("Close preview")}><IconX size={18} /></button>
           </div>
         </div>
 
@@ -196,13 +211,17 @@ export const QuickLookModal = memo(function QuickLookModal({
               <ThreeViewer modelPath={modelPath} />
             </div>
           ) : isVideo ? (
-            <VideoQuickLook filePath={asset.filePath} />
-          ) : imagePath ? (
+            sourcePath ? <VideoQuickLook filePath={sourcePath} onError={() => { setSourcePath(null); setSourceError("The video is unavailable or this format cannot be played by the viewer."); }} /> : <p role="status">{sourceError ?? tr("Opening video…")}</p>
+          ) : imagePath && !imageFailed ? (
             <div className={styles.imgWrapper}>
               <img
                 src={convertFileSrc(imagePath)}
                 alt={asset.fileName}
                 className={styles.largeImg}
+                onError={() => {
+                  if (imagePath === asset.thumbnailPath) setImageFailed(true);
+                  setSourcePath(null); setSourceError("The image could not be loaded. Reconnect the source or refresh its offline copy.");
+                }}
               />
             </div>
           ) : (
@@ -217,19 +236,21 @@ export const QuickLookModal = memo(function QuickLookModal({
                 <IconImage size={64} />
               )}
               <p className={styles.placeholderExt}>.{asset.extension.toUpperCase()}</p>
-              <p className={styles.placeholderText}>No preview generated yet</p>
+              <p className={styles.placeholderText}>{tr("No preview generated yet")}</p>
             </div>
           )}
         </div>
 
         {/* Bottom Floating Footer / Hint */}
         <div className={styles.footer}>
+          {sourceError && <span role="alert">{translateMessage(sourceError)} {asset.thumbnailPath ? tr("Showing cached preview when available.") : ''}
+            <button type="button" onClick={() => setRetry(value => value + 1)}>{tr("Retry")}</button></span>}
           <span className={styles.filePath} title={asset.filePath}>
             {asset.filePath}
           </span>
           <div className={styles.hintBadge}>
             <kbd className={styles.kbd}>{persistent ? 'Esc' : 'Space'}</kbd>
-            <span>{persistent ? 'Close preview' : 'Release to close'}</span>
+            <span>{persistent ? tr("Close preview") : tr("Release to close")}</span>
           </div>
         </div>
       </div>

@@ -57,6 +57,14 @@ fn row_to_asset(root: Option<&Path>, row: RawAssetRow) -> Asset {
     };
 
     Asset {
+        library_id: None,
+        path_labels: Default::default(),
+        inferred_labels: Default::default(),
+        label_overrides: Default::default(),
+        related_mode: "auto".into(),
+        group_files: Vec::new(),
+        offline_path: None,
+        offline_stale: false,
         id: row.id,
         file_path: resolved_file_path,
         file_name: row.file_name,
@@ -173,6 +181,18 @@ async fn search_uncached(payload: &SearchPayload, all_libs: &[crate::db::Library
 
     let mut conditions: Vec<String> = Vec::new();
     let mut binds: Vec<String> = Vec::new();
+
+    if let Some(labels) = &f.path_labels {
+        for (column, value) in [("year", &labels.year), ("source", &labels.source), ("room", &labels.room), ("renderer", &labels.renderer)] {
+            if !value.is_empty() {
+                conditions.push(format!("a.id IN (SELECT asset_id FROM asset_workflow WHERE {column} = ?)"));
+                binds.push(value.clone());
+            }
+        }
+    }
+    if f.offline_only == Some(true) {
+        conditions.push("a.id IN (SELECT o.asset_id FROM offline_assets o WHERE o.size_bytes=a.size_bytes AND o.modified_at=a.modified_at)".into());
+    }
 
     if let Some(kinds) = &f.kinds {
         if !kinds.is_empty() {
@@ -471,15 +491,32 @@ async fn search_uncached(payload: &SearchPayload, all_libs: &[crate::db::Library
         text_conditions.extend(conditions.iter().cloned());
         let where_clause = if text_conditions.is_empty() { String::new() } else { format!("WHERE {}", text_conditions.join(" AND ")) };
         let query_binds: Vec<_> = text_binds.iter().chain(binds.iter()).collect();
-        let count_sql = format!("SELECT COUNT(*) FROM assets a {where_clause}");
-        let data_sql = format!(r#"SELECT
+        // Filtre önce uygulanır; gruplanan kartın temsilcisi yalnız eşleşen dosyalardan seçilir.
+        let grouped = payload.query.group_related == Some(true) && f.extensions.as_ref().is_none_or(Vec::is_empty) && f.kinds.as_ref().is_none_or(Vec::is_empty);
+        let source = if grouped && where_clause.is_empty() {
+            format!("WITH representatives AS ({}) ", crate::workflow::GROUP_REPRESENTATIVES)
+        } else if grouped {
+            format!("WITH matched AS (SELECT a.id,w.group_key,w.group_rank FROM assets a LEFT JOIN asset_workflow w ON w.asset_id=a.id {where_clause}), ranked AS (SELECT id,row_number() OVER (PARTITION BY CASE WHEN EXISTS(SELECT 1 FROM asset_workflow g WHERE g.group_key=matched.group_key AND g.group_rank<3) THEN group_key ELSE id END ORDER BY coalesce(group_rank,4),id) AS group_position FROM matched), representatives AS (SELECT id FROM ranked WHERE group_position=1) ")
+        } else { String::new() };
+        let where_clause = if grouped { "WHERE a.id IN (SELECT id FROM representatives)".into() } else { where_clause };
+        let count_sql = if grouped { format!("{source}SELECT COUNT(*) FROM representatives") } else { format!("SELECT COUNT(*) FROM assets a {where_clause}") };
+        // Önce yalnız sayfanın kimliklerini seç; metadata ve etiketleri en fazla 500 dosya için oku.
+        let sort_index = if grouped { match sort_col {
+            "a.modified_at" => " INDEXED BY idx_assets_modified_at",
+            "a.rating" => " INDEXED BY idx_assets_rating",
+            "a.kind" => " INDEXED BY idx_assets_kind",
+            "a.is_favorite" => " INDEXED BY idx_assets_is_favorite",
+            _ => "",
+        }} else { "" };
+        let data_sql = format!(r#"{source}SELECT
             a.id, a.file_path, a.file_name, a.extension, a.kind,
             a.size_bytes, a.modified_at, a.indexed_at, a.rating,
             a.color_label, a.is_favorite, a.description, a.thumbnail_path,
             a.preview_status, a.metadata,
             (SELECT json_group_array(tag_id) FROM asset_tags WHERE asset_id = a.id) AS tags,
             (SELECT json_group_array(collection_id) FROM collection_assets WHERE asset_id = a.id) AS collections
-            FROM assets a {where_clause} ORDER BY {sort_col} {sort_dir} LIMIT ? OFFSET ?"#);
+            FROM assets a WHERE a.id IN (SELECT a.id FROM assets a{sort_index} {where_clause} ORDER BY {sort_col} {sort_dir},a.id LIMIT ? OFFSET ?)
+            ORDER BY {sort_col} {sort_dir},a.id"#);
         let mut count = sqlx::query_scalar::<_, i64>(&count_sql);
         let mut data = sqlx::query_as::<_, RawAssetRow>(&data_sql);
         for value in query_binds { count = count.bind(value); data = data.bind(value); }
@@ -505,6 +542,7 @@ async fn search_uncached(payload: &SearchPayload, all_libs: &[crate::db::Library
         let positions: Vec<_> = page_entries.iter().enumerate().filter_map(|(position, (_, index))| (*index == library_index).then_some(position)).collect();
         let mut assets: Vec<_> = positions.iter().map(|position| page_entries[*position].0.clone()).collect();
         attach_related_images(&lib.pool, &lib.root_path, &mut assets).await?;
+        crate::workflow::enrich(lib, &mut assets).await.map_err(|e| e.to_string())?;
         for (position, asset) in positions.into_iter().zip(assets) { page_entries[position].0 = asset; }
     }
     Ok(SearchResult {
@@ -539,6 +577,7 @@ pub async fn get_asset(
         if let Some(r) = row {
             let mut assets = [row_to_asset(Some(&lib.root_path), r)];
             attach_related_images(&lib.pool, &lib.root_path, &mut assets).await?;
+            crate::workflow::enrich(&lib, &mut assets).await.map_err(|e| e.to_string())?;
             return Ok(assets.into_iter().next().unwrap());
         }
     }
@@ -823,6 +862,10 @@ pub async fn rename_asset(
         .await;
     }
 
+    let mut connection = lib.pool.acquire().await.map_err(|e| e.to_string())?;
+    let kind = crate::models::AssetKind::from_extension(&new_ext);
+    crate::workflow::upsert(&mut connection, &id, &new_rel_fp, &new_ext, kind.as_str()).await.map_err(|e| e.to_string())?;
+    drop(connection);
     let _ = state.app_handle.emit("library:updated", ());
     get_asset(id, state).await
 }

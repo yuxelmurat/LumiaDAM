@@ -1,3 +1,4 @@
+import { t as tr, useTranslation } from '../../i18n';
 import React, { useState, useMemo } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useTagStore, useCollectionStore } from '../../store';
@@ -30,6 +31,7 @@ const COLOR_OPTIONS: { label: ColorLabel; hex: string }[] = [
 ];
 
 export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModalProps) {
+  useTranslation();
   const [name, setName] = useState('');
   const [directory, setDirectory] = useState('');
   const [namePrefix, setNamePrefix] = useState('');
@@ -211,11 +213,11 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
               <IconFilter size={16} />
             </div>
             <div>
-              <div className={styles.title}>Create Smart Filter</div>
-              <div className={styles.subtitle}>Dynamic filter rule saved across your libraries</div>
+              <div className={styles.title}>{tr("Create Smart Filter")}</div>
+              <div className={styles.subtitle}>{tr("Dynamic filter rule saved across your libraries")}</div>
             </div>
           </div>
-          <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Close">
+          <button type="button" className={styles.closeBtn} onClick={onClose} aria-label={tr("Close")}>
             <IconX size={15} />
           </button>
         </div>
@@ -224,11 +226,11 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
           <div className={styles.body}>
             {/* Filter Name */}
             <div className={styles.field}>
-              <label className={styles.label}>Filter Name *</label>
+              <label className={styles.label}>{tr("Filter Name *")}</label>
               <input
                 type="text"
                 className={styles.input}
-                placeholder="e.g. 5-Star Textures, Untagged Assets, Sci-Fi Models..."
+                placeholder={tr("e.g. 5-Star Textures, Untagged Assets, Sci-Fi Models...")}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
@@ -239,14 +241,14 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
             {/* Directory Filter */}
             <div className={styles.field}>
               <label className={styles.label}>
-                <span>Directory Path</span>
-                <span className={styles.optional}>Optional</span>
+                <span>{tr("Directory Path")}</span>
+                <span className={styles.optional}>{tr("Optional")}</span>
               </label>
               <div style={{ display: 'flex', gap: 6 }}>
                 <input
                   type="text"
                   className={styles.input}
-                  placeholder="e.g. C:/Assets/Textures or subfolder name"
+                  placeholder={tr("e.g. C:/Assets/Textures or subfolder name")}
                   value={directory}
                   onChange={(e) => setDirectory(e.target.value)}
                 />
@@ -254,11 +256,11 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
                   type="button"
                   className={`${styles.btn} ${styles.cancelBtn}`}
                   onClick={handleBrowseFolder}
-                  title="Browse folder"
+                  title={tr("Browse folder")}
                   style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 10px' }}
                 >
                   <IconFolder size={14} />
-                  <span>Browse</span>
+                  <span>{tr("Browse")}</span>
                 </button>
               </div>
             </div>
@@ -267,13 +269,13 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
             <div className={styles.grid2}>
               <div className={styles.field}>
                 <label className={styles.label}>
-                  <span>Item Name Prefix</span>
-                  <span className={styles.optional}>Starts with</span>
+                  <span>{tr("Item Name Prefix")}</span>
+                  <span className={styles.optional}>{tr("Starts with")}</span>
                 </label>
                 <input
                   type="text"
                   className={styles.input}
-                  placeholder="e.g. T_ or hero_"
+                  placeholder={tr("e.g. T_ or hero_")}
                   value={namePrefix}
                   onChange={(e) => setNamePrefix(e.target.value)}
                 />
@@ -281,13 +283,13 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
 
               <div className={styles.field}>
                 <label className={styles.label}>
-                  <span>Item Name Suffix</span>
-                  <span className={styles.optional}>Ends with</span>
+                  <span>{tr("Item Name Suffix")}</span>
+                  <span className={styles.optional}>{tr("Ends with")}</span>
                 </label>
                 <input
                   type="text"
                   className={styles.input}
-                  placeholder="e.g. _albedo or _final"
+                  placeholder={tr("e.g. _albedo or _final")}
                   value={nameSuffix}
                   onChange={(e) => setNameSuffix(e.target.value)}
                 />
@@ -297,8 +299,8 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
             {/* File Extensions */}
             <div className={styles.field}>
               <label className={styles.label}>
-                <span>File Types / Extensions</span>
-                <span className={styles.optional}>Multi-select</span>
+                <span>{tr("File Types / Extensions")}</span>
+                <span className={styles.optional}>{tr("Multi-select")}</span>
               </label>
               <div className={styles.chipGrid}>
                 {COMMON_EXTENSIONS.map((ext) => {
@@ -319,7 +321,7 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
                 type="text"
                 className={styles.input}
                 style={{ marginTop: 6, fontSize: 12 }}
-                placeholder="Type custom extension & press Enter (e.g. exr, tga, wav)..."
+                placeholder={tr("Type custom extension & press Enter (e.g. exr, tga, wav)...")}
                 value={customExt}
                 onChange={(e) => setCustomExt(e.target.value)}
                 onKeyDown={handleAddCustomExt}
@@ -330,8 +332,8 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
             <div className={styles.grid2}>
               <div className={styles.field}>
                 <label className={styles.label}>
-                  <span>Minimum Rating</span>
-                  <span className={styles.optional}>{ratingMin > 0 ? `${ratingMin}+ stars` : 'Any'}</span>
+                  <span>{tr("Minimum Rating")}</span>
+                  <span className={styles.optional}>{ratingMin > 0 ? tr("{p0}+ stars", { p0: ratingMin }) : tr("Any")}</span>
                 </label>
                 <div className={styles.starRow}>
                   {[1, 2, 3, 4, 5].map((star) => (
@@ -340,7 +342,7 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
                       type="button"
                       className={`${styles.starBtn} ${ratingMin >= star ? styles.starOn : ''}`}
                       onClick={() => setRatingMin(ratingMin === star ? 0 : star)}
-                      title={`${star} Star${star > 1 ? 's' : ''} or higher`}
+                      title={tr("{p0} Star{p1} or higher", { p0: star, p1: star > 1 ? 's' : '' })}
                     >
                       <IconStar size={18} />
                     </button>
@@ -352,16 +354,15 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
                       style={{ marginLeft: 6, padding: '2px 6px', fontSize: 10 }}
                       onClick={() => setRatingMin(0)}
                     >
-                      Clear
-                    </button>
+                      {tr("Clear")} </button>
                   )}
                 </div>
               </div>
 
               <div className={styles.field}>
                 <label className={styles.label}>
-                  <span>Color Label</span>
-                  <span className={styles.optional}>{selectedColor ?? 'Any'}</span>
+                  <span>{tr("Color Label")}</span>
+                  <span className={styles.optional}>{selectedColor ?? tr("Any")}</span>
                 </label>
                 <div className={styles.colorRow}>
                   {COLOR_OPTIONS.map(({ label, hex }) => {
@@ -384,8 +385,7 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
                       style={{ padding: '2px 6px', fontSize: 10 }}
                       onClick={() => setSelectedColor(null)}
                     >
-                      Clear
-                    </button>
+                      {tr("Clear")} </button>
                   )}
                 </div>
               </div>
@@ -415,20 +415,20 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
                   size={15}
                   style={{ color: favoritesOnly ? 'hsl(350 89% 60%)' : 'var(--color-text-muted)' }}
                 />
-                <span>Favorites Only (matches starred / favorited items)</span>
+                <span>{tr("Favorites Only (matches starred / favorited items)")}</span>
               </label>
             </div>
 
             {/* ── TAG FILTER SECTION (Any / No-Tag / Specific Tags with AND/OR) ── */}
             <div className={styles.field}>
               <div className={styles.label}>
-                <span>Tag Filter</span>
+                <span>{tr("Tag Filter")}</span>
                 <span className={styles.optional}>
                   {tagMode === 'none'
-                    ? 'Matches untagged items'
+                    ? tr("Matches untagged items")
                     : tagMode === 'specific'
-                    ? `${selectedTags.length} selected (${tagLogic.toUpperCase()})`
-                    : 'Any'}
+                    ? tr("{p0} selected ({p1})", { p0: selectedTags.length, p1: tr(tagLogic).toUpperCase() })
+                    : tr("Any")}
                 </span>
               </div>
 
@@ -438,63 +438,55 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
                   className={`${styles.segmentBtn} ${tagMode === 'any' ? styles.segmentBtnActive : ''}`}
                   onClick={() => setTagMode('any')}
                 >
-                  Any Tags
-                </button>
+                  {tr("Any Tags")} </button>
                 <button
                   type="button"
                   className={`${styles.segmentBtn} ${tagMode === 'none' ? styles.segmentBtnActive : ''}`}
                   onClick={() => setTagMode('none')}
                 >
-                  Untagged (No Tags)
-                </button>
+                  {tr("Untagged (No Tags)")} </button>
                 <button
                   type="button"
                   className={`${styles.segmentBtn} ${tagMode === 'specific' ? styles.segmentBtnActive : ''}`}
                   onClick={() => setTagMode('specific')}
                 >
-                  Specific Tags
-                </button>
+                  {tr("Specific Tags")} </button>
               </div>
 
               {tagMode === 'specific' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
                   <div className={styles.logicBar}>
                     <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
-                      Match logic:
-                    </span>
+                      {tr("Match logic:")} </span>
                     <div className={styles.logicToggle}>
                       <button
                         type="button"
                         className={`${styles.logicBtn} ${tagLogic === 'or' ? styles.logicBtnActive : ''}`}
                         onClick={() => setTagLogic('or')}
-                        title="Matches items having ANY of the selected tags"
+                        title={tr("Matches items having ANY of the selected tags")}
                       >
-                        ANY (OR)
-                      </button>
+                        {tr("ANY (OR)")} </button>
                       <button
                         type="button"
                         className={`${styles.logicBtn} ${tagLogic === 'and' ? styles.logicBtnActive : ''}`}
                         onClick={() => setTagLogic('and')}
-                        title="Matches items having ALL of the selected tags"
+                        title={tr("Matches items having ALL of the selected tags")}
                       >
-                        ALL (AND)
-                      </button>
+                        {tr("ALL (AND)")} </button>
                       <button
                         type="button"
                         className={`${styles.logicBtn} ${tagLogic === 'and_or' ? styles.logicBtnActive : ''}`}
                         onClick={() => setTagLogic('and_or')}
-                        title="Matches items having the primary tag AND at least one of the other selected tags (Any + All)"
+                        title={tr("Matches items having the primary tag AND at least one of the other selected tags (Any + All)")}
                       >
-                        AND + OR (ANY + ALL)
-                      </button>
+                        {tr("AND + OR (ANY + ALL)")} </button>
                     </div>
                   </div>
 
                   <div className={styles.chipGrid}>
                     {tags.length === 0 && (
                       <span style={{ fontSize: 11.5, color: 'var(--color-text-disabled)' }}>
-                        No tags created yet.
-                      </span>
+                        {tr("No tags created yet.")} </span>
                     )}
                     {tags.map((t) => {
                       const active = selectedTags.includes(t.id);
@@ -527,13 +519,13 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
             {/* ── COLLECTION FILTER SECTION (Any / No-Collection / Specific with Hierarchy & AND/OR) ── */}
             <div className={styles.field}>
               <div className={styles.label}>
-                <span>Collection Filter</span>
+                <span>{tr("Collection Filter")}</span>
                 <span className={styles.optional}>
                   {collectionMode === 'none'
-                    ? 'Matches unorganized items'
+                    ? tr("Matches unorganized items")
                     : collectionMode === 'specific'
-                    ? `${selectedCollections.length} selected (${collectionLogic.toUpperCase()})`
-                    : 'Any'}
+                    ? tr("{p0} selected ({p1})", { p0: selectedCollections.length, p1: tr(collectionLogic).toUpperCase() })
+                    : tr("Any")}
                 </span>
               </div>
 
@@ -543,55 +535,48 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
                   className={`${styles.segmentBtn} ${collectionMode === 'any' ? styles.segmentBtnActive : ''}`}
                   onClick={() => setCollectionMode('any')}
                 >
-                  Any Collections
-                </button>
+                  {tr("Any Collections")} </button>
                 <button
                   type="button"
                   className={`${styles.segmentBtn} ${collectionMode === 'none' ? styles.segmentBtnActive : ''}`}
                   onClick={() => setCollectionMode('none')}
                 >
-                  Unorganized (No Collection)
-                </button>
+                  {tr("Unorganized (No Collection)")} </button>
                 <button
                   type="button"
                   className={`${styles.segmentBtn} ${collectionMode === 'specific' ? styles.segmentBtnActive : ''}`}
                   onClick={() => setCollectionMode('specific')}
                 >
-                  Specific Collections
-                </button>
+                  {tr("Specific Collections")} </button>
               </div>
 
               {collectionMode === 'specific' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
                   <div className={styles.logicBar}>
                     <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
-                      Match logic:
-                    </span>
+                      {tr("Match logic:")} </span>
                     <div className={styles.logicToggle}>
                       <button
                         type="button"
                         className={`${styles.logicBtn} ${collectionLogic === 'or' ? styles.logicBtnActive : ''}`}
                         onClick={() => setCollectionLogic('or')}
-                        title="Matches items in ANY of the selected collections"
+                        title={tr("Matches items in ANY of the selected collections")}
                       >
-                        ANY (OR)
-                      </button>
+                        {tr("ANY (OR)")} </button>
                       <button
                         type="button"
                         className={`${styles.logicBtn} ${collectionLogic === 'and' ? styles.logicBtnActive : ''}`}
                         onClick={() => setCollectionLogic('and')}
-                        title="Matches items belonging to ALL selected collections"
+                        title={tr("Matches items belonging to ALL selected collections")}
                       >
-                        ALL (AND)
-                      </button>
+                        {tr("ALL (AND)")} </button>
                       <button
                         type="button"
                         className={`${styles.logicBtn} ${collectionLogic === 'and_or' ? styles.logicBtnActive : ''}`}
                         onClick={() => setCollectionLogic('and_or')}
-                        title="Matches items in parent/main collection AND in any selected sub-collection (Any + All)"
+                        title={tr("Matches items in parent/main collection AND in any selected sub-collection (Any + All)")}
                       >
-                        AND + OR (ANY + ALL)
-                      </button>
+                        {tr("AND + OR (ANY + ALL)")} </button>
                     </div>
                   </div>
 
@@ -599,8 +584,7 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
                   <div className={styles.multiSelectBox}>
                     {collectionListWithPaths.length === 0 && (
                       <span style={{ fontSize: 11.5, color: 'var(--color-text-disabled)', padding: 6 }}>
-                        No collections created yet.
-                      </span>
+                        {tr("No collections created yet.")} </span>
                     )}
                     {collectionListWithPaths.map((col) => {
                       const active = selectedCollections.includes(col.id);
@@ -641,8 +625,7 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
                       style={{ cursor: 'pointer', accentColor: 'var(--color-brand-500)' }}
                     />
                     <label htmlFor="smart-subcol" style={{ cursor: 'pointer' }}>
-                      Include sub-collections automatically
-                    </label>
+                      {tr("Include sub-collections automatically")} </label>
                   </div>
                 </div>
               )}
@@ -656,14 +639,13 @@ export function SmartFilterModal({ isOpen, onClose, onCreated }: SmartFilterModa
               onClick={onClose}
               disabled={isSaving}
             >
-              Cancel
-            </button>
+              {tr("Cancel")} </button>
             <button
               type="submit"
               className={`${styles.btn} ${styles.saveBtn}`}
               disabled={!name.trim() || isSaving}
             >
-              {isSaving ? 'Saving...' : 'Create Smart Filter'}
+              {isSaving ? tr("Saving...") : tr("Create Smart Filter")}
             </button>
           </div>
         </form>

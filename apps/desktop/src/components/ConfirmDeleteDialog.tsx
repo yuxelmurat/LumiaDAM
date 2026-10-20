@@ -1,3 +1,4 @@
+import { t as tr, useTranslation } from '../i18n';
 import { useState, useEffect, useRef } from 'react';
 import clsx from 'clsx';
 import { IconTrash, IconX } from './Icons';
@@ -18,14 +19,15 @@ export function ConfirmDeleteDialog({
   onConfirm,
   onCancel,
 }: ConfirmDeleteDialogProps) {
+  useTranslation();
   const [typedText, setTypedText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
 
   const isAsset = itemType === 'asset' || itemType === 'assets';
   const isLibrary = itemType === 'library';
-  const actionWord = isLibrary ? 'remove' : 'delete';
-  const actionWordCap = isLibrary ? 'Remove' : 'Delete';
+  const actionTitle = tr({ tag: 'Delete tag', collection: 'Delete collection', library: 'Remove library', asset: 'Delete file', assets: 'Delete files' }[itemType]);
+  const confirmationWord = tr('confirm');
 
   useEffect(() => {
     if (isOpen) {
@@ -43,7 +45,7 @@ export function ConfirmDeleteDialog({
   if (!isOpen) return null;
 
   const normalized = typedText.trim().toLowerCase();
-  const isMatched = isAsset || normalized === 'confirm' || normalized === '(confirm)';
+  const isMatched = isAsset || normalized === confirmationWord || normalized === `(${confirmationWord})`;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,31 +73,29 @@ export function ConfirmDeleteDialog({
             <div className={styles.iconCircle}>
               <IconTrash size={18} />
             </div>
-            <h3 className={styles.title}>{actionWordCap} {isAsset ? (itemType === 'assets' ? 'Files' : 'File') : itemType}</h3>
+            <h3 className={styles.title}>{actionTitle}</h3>
           </div>
-          <button className={styles.closeBtn} onClick={onCancel} title="Close">
+          <button className={styles.closeBtn} onClick={onCancel} title={tr("Close")}>
             <IconX size={14} />
           </button>
         </div>
 
         <div className={styles.content}>
           <p className={styles.warningText}>
-            Are you sure you want to {actionWord} {isAsset ? (itemType === 'assets' ? 'the selected files' : 'the file') : `the ${itemType}`}{' '}
-            <strong className={styles.targetName}>"{itemName}"</strong>?
+            {tr(isLibrary ? 'Remove this library?' : 'Delete the selected item(s)?')}
+            {' '}<strong className={styles.targetName}>"{itemName}"</strong>
           </p>
           {isLibrary ? (
             <p className={styles.subText}>
-              This will remove the library from LumiaDAM. <strong style={{ color: 'var(--color-text-main, #ffffff)' }}>Your original files on disk will NOT be deleted.</strong> To verify, type{' '}
-              <code className={styles.confirmWord}>confirm</code> below:
+              {tr("This will remove the library from LumiaDAM.")} <strong style={{ color: 'var(--color-text-main, #ffffff)' }}>{tr("Your original files on disk will NOT be deleted.")}</strong>
             </p>
           ) : isAsset ? (
             <p className={styles.subText}>
-              This will move the file to the <strong style={{ color: 'var(--color-text-main, #ffffff)' }}>Recycle Bin</strong> on your system and remove it from LumiaDAM.
+              {tr('Selected files will be moved to the Recycle Bin and removed from LumiaDAM.')}
             </p>
           ) : (
             <p className={styles.subText}>
-              This action cannot be undone. To verify, type{' '}
-              <code className={styles.confirmWord}>confirm</code> below:
+              {tr('This action cannot be undone.')}
             </p>
           )}
 
@@ -105,7 +105,8 @@ export function ConfirmDeleteDialog({
                 ref={inputRef}
                 type="text"
                 className={styles.input}
-                placeholder='Type "confirm" to verify'
+                aria-label={tr('Type "{word}" to confirm', { word: confirmationWord })}
+                placeholder={tr('Type "{word}" to confirm', { word: confirmationWord })}
                 value={typedText}
                 onChange={(e) => setTypedText(e.target.value)}
                 autoComplete="off"
@@ -119,8 +120,7 @@ export function ConfirmDeleteDialog({
                 className={clsx(styles.btn, styles.cancelBtn)}
                 onClick={onCancel}
               >
-                Cancel
-              </button>
+                {tr("Cancel")} </button>
               <button
                 ref={confirmBtnRef}
                 type="submit"
@@ -131,7 +131,7 @@ export function ConfirmDeleteDialog({
                   isMatched && styles.deleteBtnActive
                 )}
               >
-                {actionWordCap} {isAsset ? (itemType === 'assets' ? 'Files' : 'File') : itemType}
+                {actionTitle}
               </button>
             </div>
           </form>

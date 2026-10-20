@@ -80,18 +80,20 @@ pub async fn prepare_catalog(storage_root: &Path, name: &str, id: &str, source: 
         if let Some(source) = source {
             snapshot(&source.join("library.sqlite"), &staging.join("library.sqlite")).await
                 .context("Cannot read the old catalog; the source is preserved")?;
-            let source_thumbs = source.join("thumbs");
-            if source_thumbs.try_exists()? {
-                for entry in walkdir::WalkDir::new(&source_thumbs).follow_links(false) {
+            for folder in ["thumbs", "offline", "exports"] {
+              let source_files = source.join(folder);
+              if source_files.try_exists()? {
+                for entry in walkdir::WalkDir::new(&source_files).follow_links(false) {
                     let entry = entry?;
-                    if entry.path_is_symlink() { bail!("Transfer stopped: the preview folder contains a symbolic link"); }
-                    let target = staging.join("thumbs").join(entry.path().strip_prefix(&source_thumbs)?);
+                    if entry.path_is_symlink() { bail!("Transfer stopped: a local cache folder contains a symbolic link"); }
+                    let target = staging.join(folder).join(entry.path().strip_prefix(&source_files)?);
                     if entry.file_type().is_dir() {
                         std::fs::create_dir_all(target)?;
                     } else {
                         std::fs::copy(entry.path(), target)?;
                     }
                 }
+              }
             }
             let mut connection = SqliteConnection::connect_with(
                 &SqliteConnectOptions::new().filename(staging.join("library.sqlite")),
@@ -101,10 +103,11 @@ pub async fn prepare_catalog(storage_root: &Path, name: &str, id: &str, source: 
                 // VACUUM sonrasında değişebilen rowid bağlantılarını güncellemeden önce kur.
                 sqlx::query("INSERT INTO assets_fts(assets_fts) VALUES('rebuild')").execute(&mut *transaction).await?;
                 crate::search_index::rebuild_after_snapshot(&mut transaction).await?;
-                let rows: Vec<(String, Option<String>, String)> = sqlx::query_as(
-                    "SELECT id, thumbnail_path, metadata FROM assets"
+                let rows: Vec<(String, String, Option<String>, String)> = sqlx::query_as(
+                    "SELECT id, file_path, thumbnail_path, metadata FROM assets"
                 ).fetch_all(&mut *transaction).await?;
-                for (id, thumbnail, metadata) in rows {
+                for (id, file_path, thumbnail, metadata) in rows {
+                    let file_path = relocated_preview(&file_path, source, &destination).unwrap_or(file_path);
                     let thumbnail = thumbnail.map(|v| relocated_preview(&v, source, &destination).unwrap_or(v));
                     let mut metadata: serde_json::Value = serde_json::from_str(&metadata)?;
                     if let Some(value) = metadata.get("preview_model").and_then(|v| v.as_str()) {
@@ -112,8 +115,8 @@ pub async fn prepare_catalog(storage_root: &Path, name: &str, id: &str, source: 
                             metadata["preview_model"] = path.into();
                         }
                     }
-                    sqlx::query("UPDATE assets SET thumbnail_path = ?, metadata = ? WHERE id = ?")
-                        .bind(thumbnail).bind(metadata.to_string()).bind(id).execute(&mut *transaction).await?;
+                    sqlx::query("UPDATE assets SET file_path = ?, thumbnail_path = ?, metadata = ? WHERE id = ?")
+                        .bind(file_path).bind(thumbnail).bind(metadata.to_string()).bind(id).execute(&mut *transaction).await?;
                 }
                 transaction.commit().await?;
                 let check: String = sqlx::query_scalar("PRAGMA quick_check").fetch_one(&mut connection).await?;

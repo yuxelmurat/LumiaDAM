@@ -11,7 +11,10 @@ impl eframe::App for LibraryPdf {
         if !raw.dropped_files.is_empty() { raw.dropped_files.clear(); lumiadam_host::open_notice(); }
         self.0.raw_input_hook(ctx, raw);
     }
-    fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) { self.0.logic(ctx, frame); }
+    fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        self.0.language = lumiadam_host::language();
+        self.0.logic(ctx, frame);
+    }
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) { self.0.ui(ui, frame); }
     fn save(&mut self, storage: &mut dyn eframe::Storage) { self.0.save(storage); }
 }
@@ -25,7 +28,7 @@ fn main() {
         let options = eframe::WebOptions { renderer: eframe::Renderer::Glow, ..Default::default() };
         let result = eframe::WebRunner::new().start(canvas, options, Box::new(|cc| {
             let mut app = pdfcraft_ui_egui::PdfCraftApp::new();
-            app.language = "en".into();
+            app.language = lumiadam_host::language();
             app.host_save = Some(Box::new(|name, bytes, _| lumiadam_host::write(name, bytes)));
             lumiadam_host::install(app.startup_inbox.clone(), cc.egui_ctx.clone());
             Ok(Box::new(LibraryPdf(app)))

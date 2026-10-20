@@ -3,6 +3,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { catalogFiles, prepareTurkishCatalog } from '../integrations/craft-editors/localization.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const common = resolve(root, 'integrations/craft-editors');
@@ -36,6 +37,7 @@ for (const [name, config] of Object.entries(configs)) {
   const output = resolve(root, 'apps/desktop/public', name), stamp = resolve(output, 'upstream.json');
   const fingerprint = createHash('sha256').update(JSON.stringify({pin,config}))
     .update(readFileSync(resolve(common, 'host.rs'))).update(readFileSync(resolve(common, 'bridge.js')))
+    .update(Buffer.concat(catalogFiles.map(path => readFileSync(path))))
     .update(readFileSync(fileURLToPath(import.meta.url)))
     .update(name === 'pdfcraft' ? readFileSync(resolve(integration, 'main.rs')) : '').digest('hex');
   const manifest = JSON.stringify({ ...pin, ...config, fingerprint });
@@ -64,7 +66,7 @@ for (const [name, config] of Object.entries(configs)) {
     writeChanged(resolve(source,'crates/ui-egui/src/widgets.rs'),widgets);
     let lib = upstream('crates/ui-egui/src/lib.rs');
     lib = replace(lib,'    pub fn open_dialog(&mut self) {',
-      '    pub fn open_dialog(&mut self) {\n        if self.host_save.is_some() { self.notify("Choose another PDF in LumiaDAM Libraries."); return; }');
+      '    pub fn open_dialog(&mut self) {\n        if self.host_save.is_some() { self.notify(if self.language == "tr" { "LumiaDAM Kütüphaneler bölümünden başka bir PDF seçin." } else { "Choose another PDF in LumiaDAM Libraries." }); return; }');
     writeChanged(resolve(source,'crates/ui-egui/src/lib.rs'),lib);
   } else {
     let web = upstream(`${webDir}/src/web.rs`);
@@ -72,9 +74,9 @@ for (const [name, config] of Object.entries(configs)) {
     web = replace(web,'                let ctx = &cc.egui_ctx;',
       '                let ctx = &cc.egui_ctx;\n                lumiadam_host::install(host.inbox.clone(), ctx.clone());');
     web = replace(web,'                Ok(Box::new(WebShell { app: Some(app), host, canvas: page, loss }))',
-      '                let mut app = app;\n                app.session.prefs.interface_language = "en".into();\n                Ok(Box::new(WebShell { app: Some(app), host, canvas: page, loss }))');
+      '                let mut app = app;\n                app.session.prefs.interface_language = lumiadam_host::language();\n                Ok(Box::new(WebShell { app: Some(app), host, canvas: page, loss }))');
     web = section(web,'        let dropped = ctx.input_mut','        app.logic(ctx);',
-      '        if ctx.input_mut(|i| !std::mem::take(&mut i.raw.dropped_files).is_empty()) { lumiadam_host::open_notice(); }\n');
+      '        if ctx.input_mut(|i| !std::mem::take(&mut i.raw.dropped_files).is_empty()) { lumiadam_host::open_notice(); }\n        app.session.prefs.interface_language = lumiadam_host::language();\n');
     web = section(web,'        open_async: Some(Box::new(move || {','        download: Some',
       '        open_async: Some(Box::new(move || { lumiadam_host::open_notice(); })),\n');
     web = replace(web,'download(name, bytes)','lumiadam_host::write(name, bytes)');
@@ -83,6 +85,7 @@ for (const [name, config] of Object.entries(configs)) {
     web = section(web,'/// Trigger a browser download','/// An object URL of a blob','');
     writeChanged(resolve(source,webDir,'src/web.rs'),web);
   }
+  prepareTurkishCatalog({ name, source, upstream, writeChanged });
   let html = upstream(`${webDir}/index.html`).replace(' data-wasm-opt="z"','');
   html = replace(html,'</head>',`<script>window.LUMIADAM_EDITOR=${JSON.stringify(config)};</script>\n<script src="bridge.js"></script>\n<link data-trunk rel="copy-file" href="bridge.js">\n</head>`);
   writeChanged(resolve(source,webDir,'index.html'),html);

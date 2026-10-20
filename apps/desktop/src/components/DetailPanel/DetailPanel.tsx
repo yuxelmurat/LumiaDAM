@@ -1,3 +1,4 @@
+import { t as tr, useTranslation, translateMessage, formatDate } from '../../i18n';
 import { useCallback, useState, useMemo, useEffect } from 'react';
 import clsx from 'clsx';
 import { useUIStore, useAssetStore, useTagStore, useCollectionStore } from '../../store';
@@ -9,12 +10,21 @@ import { api } from '../../api';
 import { message } from '@tauri-apps/plugin-dialog';
 import { ThreeViewer } from './ThreeViewer';
 import styles from './DetailPanel.module.css';
+import { AssetWorkflow } from '../LibraryWorkflow/AssetWorkflow';
+import { activateAsset } from '../AssetGrid/assetActions';
+import type { EditorId } from '../Editor/editors';
+import { ViewerBoundary } from '../ViewerBoundary';
 
 const COLOR_LABELS: ColorLabel[] = [
   'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink',
 ];
 
-export function DetailPanel() {
+export function DetailPanel({ onPreviewAsset, onOpenEditorAsset, onOpenCadAsset }: {
+  onPreviewAsset: (asset: Asset) => void;
+  onOpenEditorAsset: (asset: Asset, editor?: EditorId) => void | Promise<void>;
+  onOpenCadAsset: (asset: Asset) => void;
+}) {
+  useTranslation();
   const focusedAssetId = useUIStore((s) => s.focusedAssetId);
   const asset = useAssetStore((s) =>
     focusedAssetId ? s.assets.find((a) => a.id === focusedAssetId) ?? s.assetMap.get(focusedAssetId) ?? null : null
@@ -26,7 +36,7 @@ export function DetailPanel() {
   const collections = useCollectionStore((s) => s.collections);
   const addToCollection = useCollectionStore((s) => s.addToCollection);
   const removeFromCollection = useCollectionStore((s) => s.removeFromCollection);
-  const [tab, setTab] = useState<'info' | 'tags' | 'collections' | 'preview'>('info');
+  const [tab, setTab] = useState<'info' | 'tags' | 'collections' | 'preview' | 'workflow'>('info');
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editingName, setEditingName] = useState('');
@@ -118,7 +128,7 @@ export function DetailPanel() {
       <aside className={styles.panel} id="detail-panel">
         <div className={styles.empty}>
           <IconInfo size={32} />
-          <p>Select an asset to see details</p>
+          <p>{tr("Select an asset to see details")}</p>
         </div>
       </aside>
     );
@@ -134,7 +144,7 @@ export function DetailPanel() {
         {asset.thumbnailPath && !asset.thumbnailPath.endsWith('.glb') ? (
           <img src={convertFileSrc(asset.thumbnailPath)} alt={asset.fileName} className={styles.thumbImg} />
         ) : (asset.metadata?.preview_model || asset.thumbnailPath?.endsWith('.glb')) ? (
-          <ThreeViewer modelPath={(asset.metadata?.preview_model as string) || asset.thumbnailPath!} />
+          <ViewerBoundary key={asset.id} onBack={() => setTab('info')}><ThreeViewer modelPath={(asset.metadata?.preview_model as string) || asset.thumbnailPath!} /></ViewerBoundary>
         ) : (
           <div className={styles.thumbPlaceholder}>
             <span className={styles.thumbExt}>.{asset.extension}</span>
@@ -142,10 +152,10 @@ export function DetailPanel() {
               className={styles.thumbGenerateBtn}
               onClick={handleGeneratePreview}
               disabled={isPending}
-              title={isError ? "Preview failed. Click to retry" : "Generate preview"}
+              title={isError ? tr("Preview failed. Click to retry") : tr("Generate preview")}
             >
               <IconRefresh size={12} className={clsx(isPending && 'animate-spin')} />
-              <span>{isPending ? 'Generating…' : isError ? 'Retry' : 'Generate'}</span>
+              <span>{isPending ? tr("Generating…") : isError ? tr("Retry") : tr("Generate")}</span>
             </button>
           </div>
         )}
@@ -180,7 +190,7 @@ export function DetailPanel() {
             <button
               type="submit"
               className={clsx(styles.nameActionBtn, styles.nameActionBtnConfirm)}
-              title="Save name"
+              title={tr("Save name")}
             >
               <IconCheck size={13} />
             </button>
@@ -191,7 +201,7 @@ export function DetailPanel() {
                 setIsEditingName(false);
                 setNameError(null);
               }}
-              title="Cancel"
+              title={tr("Cancel")}
             >
               <IconX size={13} />
             </button>
@@ -199,7 +209,7 @@ export function DetailPanel() {
         ) : (
           <p
             className={clsx(styles.fileName, 'truncate')}
-            title="Double-click or click edit icon to rename"
+            title={tr("Double-click or click edit icon to rename")}
             onDoubleClick={handleStartRename}
             style={{ cursor: 'pointer' }}
           >
@@ -211,7 +221,7 @@ export function DetailPanel() {
           <button
             id="detail-favorite"
             className={clsx(styles.actionBtn, asset.isFavorite && styles.actionBtnFavorite)}
-            title={asset.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            title={asset.isFavorite ? tr("Remove from favorites") : tr("Add to favorites")}
             onClick={toggleFavorite}
           >
             {asset.isFavorite ? (
@@ -223,7 +233,7 @@ export function DetailPanel() {
           <button
             id="detail-rename"
             className={styles.actionBtn}
-            title="Rename file (F2)"
+            title={tr("Rename file (F2)")}
             onClick={handleStartRename}
           >
             <IconEdit size={14} />
@@ -231,7 +241,7 @@ export function DetailPanel() {
           <button
             id="detail-gen-preview-header"
             className={clsx(styles.actionBtn, isPending && styles.actionBtnLoading)}
-            title={isPending ? "Generating preview…" : "Generate/Regenerate preview"}
+            title={isPending ? tr("Generating preview…") : tr("Generate/Regenerate preview")}
             onClick={handleGeneratePreview}
             disabled={isPending}
           >
@@ -240,12 +250,12 @@ export function DetailPanel() {
           <button
             id="detail-open-external"
             className={styles.actionBtn}
-            title="Open with default app"
+            title={tr("Open with default app")}
             onClick={async () => {
               try {
-                await api.openWithDefault(asset.filePath);
+                await api.openAssetExternal(asset);
               } catch (err) {
-                await message(`Could not open ${asset.fileName}: ${String(err)}`, { title: 'Open file', kind: 'error' }).catch(console.error);
+                await message(tr("Could not open {p0}: {p1}", { p0: asset.fileName, p1: String(err) }), { title: tr("Open file"), kind: 'error' }).catch(console.error);
               }
             }}
           >
@@ -254,7 +264,7 @@ export function DetailPanel() {
           <button
             id="detail-reveal"
             className={styles.actionBtn}
-            title="Reveal in Explorer"
+            title={tr("Reveal in Explorer")}
             onClick={async () => {
               try {
                 await api.revealInExplorer(asset.filePath);
@@ -268,7 +278,7 @@ export function DetailPanel() {
           <button
             id="detail-copy-path"
             className={styles.actionBtn}
-            title="Copy path"
+            title={tr("Copy path")}
             onClick={() => navigator.clipboard.writeText(asset.filePath)}
           >
             <IconCopy size={14} />
@@ -276,7 +286,7 @@ export function DetailPanel() {
           <button
             id="detail-delete"
             className={clsx(styles.actionBtn, styles.actionBtnDanger)}
-            title="Delete file (Move to Recycle Bin)"
+            title={tr("Delete file (Move to Recycle Bin)")}
             onClick={() => setIsDeleteDialogOpen(true)}
           >
             <IconTrash size={14} />
@@ -286,25 +296,27 @@ export function DetailPanel() {
 
       {nameError && (
         <div style={{ color: '#ef4444', fontSize: '11px', padding: '2px 16px', background: 'rgba(239, 68, 68, 0.1)' }}>
-          {nameError}
+          {translateMessage(nameError)}
         </div>
       )}
 
       {/* Tabs */}
       <div className={styles.tabs}>
-        {(['info', 'tags', 'collections', 'preview'] as const).map((t) => (
+        {(['info', 'tags', 'collections', 'preview', 'workflow'] as const).map((t) => (
           <button
             key={t}
             id={`detail-tab-${t}`}
             className={clsx(styles.tab, tab === t && styles.tabActive)}
             onClick={() => setTab(t)}
           >
-            {t.charAt(0).toUpperCase() + t.slice(1)}
+            {tr(t.charAt(0).toUpperCase() + t.slice(1))}
           </button>
         ))}
       </div>
 
       <div className={styles.tabContent}>
+        {tab === 'workflow' && <AssetWorkflow key={asset.id} asset={asset} onEdit={onOpenEditorAsset}
+          onOpen={file => activateAsset(file, onPreviewAsset, onOpenEditorAsset, onOpenCadAsset)} />}
         {tab === 'info' && (
           <InfoTab
             asset={asset}
@@ -331,7 +343,7 @@ export function DetailPanel() {
           />
         )}
         {tab === 'preview' && (
-          <PreviewTab asset={asset} onGeneratePreview={handleGeneratePreview} />
+          <ViewerBoundary key={asset.id} onBack={() => setTab('info')}><PreviewTab asset={asset} onGeneratePreview={handleGeneratePreview} /></ViewerBoundary>
         )}
       </div>
 
@@ -355,12 +367,13 @@ function InfoTab({
   onColorLabelChange: (l: ColorLabel) => void;
   onFavoriteChange: () => void;
 }) {
+  useTranslation();
   const [hoverRating, setHoverRating] = useState(0);
 
   return (
     <div className={styles.infoGrid}>
       {/* Favorite */}
-      <label className={styles.infoLabel}>Favorite</label>
+      <label className={styles.infoLabel}>{tr("Favorite")}</label>
       <div className={styles.favoriteRow}>
         <button
           id="detail-info-favorite"
@@ -371,18 +384,18 @@ function InfoTab({
           {asset.isFavorite ? (
             <>
               <IconHeartFilled size={14} className={styles.favoriteHeartFilled} />
-              <span>In Favorites</span>
+              <span>{tr("In Favorites")}</span>
             </>
           ) : (
             <>
               <IconHeart size={14} />
-              <span>Add to Favorites</span>
+              <span>{tr("Add to Favorites")}</span>
             </>
           )}
         </button>
       </div>
       {/* Rating */}
-      <label className={styles.infoLabel}>Rating</label>
+      <label className={styles.infoLabel}>{tr("Rating")}</label>
       <div className={styles.starRow}>
         {Array.from({ length: 5 }).map((_, i) => {
           const n = i + 1;
@@ -405,12 +418,12 @@ function InfoTab({
       </div>
 
       {/* Color label */}
-      <label className={styles.infoLabel}>Label</label>
+      <label className={styles.infoLabel}>{tr("Label")}</label>
       <div className={styles.colorRow}>
         <button
           className={clsx(styles.colorNoneBtn, asset.colorLabel === 'none' && styles.colorNoneActive)}
           onClick={() => onColorLabelChange('none')}
-          title="No label"
+          title={tr("No label")}
         >
           <IconX size={10} />
         </button>
@@ -420,17 +433,17 @@ function InfoTab({
             id={`detail-color-${label}`}
             className={clsx(styles.colorDot, asset.colorLabel === label && styles.colorDotActive)}
             style={{ background: `var(--swatch-${label})` }}
-            title={label}
+            title={tr(label)}
             onClick={() => onColorLabelChange(label)}
           />
         ))}
       </div>
 
       {/* File info */}
-      <label className={styles.infoLabel}>Path</label>
+      <label className={styles.infoLabel}>{tr("Path")}</label>
       <span
         className={clsx(styles.infoValue, styles.mono, 'truncate')}
-        title={`${asset.filePath} (Click to reveal in Explorer)`}
+        title={tr("{p0} (Click to reveal in Explorer)", { p0: asset.filePath })}
         style={{ cursor: 'pointer' }}
         onClick={async () => {
           try {
@@ -443,32 +456,32 @@ function InfoTab({
         {asset.filePath}
       </span>
 
-      <label className={styles.infoLabel}>Format</label>
+      <label className={styles.infoLabel}>{tr("Format")}</label>
       <span className={styles.infoValue}>.{asset.extension.toUpperCase()}</span>
 
-      <label className={styles.infoLabel}>Kind</label>
+      <label className={styles.infoLabel}>{tr("Kind")}</label>
       <span className={styles.infoValue}>{asset.kind.replace('_', ' ')}</span>
 
-      <label className={styles.infoLabel}>Size</label>
+      <label className={styles.infoLabel}>{tr("Size")}</label>
       <span className={clsx(styles.infoValue, styles.mono)}>
         {(asset.sizeBytes / 1024 / 1024).toFixed(2)} MB
       </span>
 
-      <label className={styles.infoLabel}>Modified</label>
+      <label className={styles.infoLabel}>{tr("Modified")}</label>
       <span className={styles.infoValue}>
-        {new Date(asset.modifiedAt).toLocaleDateString()}
+        {formatDate(asset.modifiedAt)}
       </span>
 
-      <label className={styles.infoLabel}>Added</label>
+      <label className={styles.infoLabel}>{tr("Added")}</label>
       <span className={styles.infoValue}>
-        {new Date(asset.indexedAt).toLocaleDateString()}
+        {formatDate(asset.indexedAt)}
       </span>
 
       {/* Extracted metadata */}
       {Object.entries(asset.metadata).length > 0 && (
         <>
           <div className={styles.metaDivider} />
-          <label className={clsx(styles.infoLabel, styles.metaHeader)}>Metadata</label>
+          <label className={clsx(styles.infoLabel, styles.metaHeader)}>{tr("Metadata")}</label>
           <div />
           {Object.entries(asset.metadata).map(([k, v]) => (
             <>
@@ -492,18 +505,19 @@ function TagsTab({
   tags: import('../../types').Tag[];
   onToggle: (id: string) => void;
 }) {
+  useTranslation();
   const assigned = tags.filter((t) => asset.tags.includes(t.id));
   const unassigned = tags.filter((t) => !asset.tags.includes(t.id));
 
   return (
     <div className={styles.tagsSection}>
       {tags.length === 0 && (
-        <p className={styles.noTags}>No tags yet. Create tags in the sidebar.</p>
+        <p className={styles.noTags}>{tr("No tags yet. Create tags in the sidebar.")}</p>
       )}
 
       {assigned.length > 0 && (
         <>
-          <p className={styles.tagsGroupLabel}>Assigned</p>
+          <p className={styles.tagsGroupLabel}>{tr("Assigned")}</p>
           <div className={styles.tagsGrid}>
             {assigned.map((tag) => (
               <button
@@ -511,7 +525,7 @@ function TagsTab({
                 id={`detail-tag-${tag.id}`}
                 className={clsx(styles.tagPill, styles.tagActive)}
                 onClick={() => onToggle(tag.id)}
-                title="Click to remove"
+                title={tr("Click to remove")}
               >
                 <span
                   className={styles.tagDot}
@@ -527,7 +541,7 @@ function TagsTab({
 
       {unassigned.length > 0 && (
         <>
-          <p className={styles.tagsGroupLabel}>{assigned.length > 0 ? 'Available' : 'All Tags'}</p>
+          <p className={styles.tagsGroupLabel}>{assigned.length > 0 ? tr("Available") : tr("All Tags")}</p>
           <div className={styles.tagsGrid}>
             {unassigned.map((tag) => (
               <button
@@ -535,7 +549,7 @@ function TagsTab({
                 id={`detail-tag-${tag.id}`}
                 className={styles.tagPill}
                 onClick={() => onToggle(tag.id)}
-                title="Click to assign"
+                title={tr("Click to assign")}
               >
                 <span
                   className={styles.tagDot}
@@ -560,6 +574,7 @@ function CollectionsTab({
   onAdd: (collectionId: string) => void;
   onRemove: (collectionId: string) => void;
 }) {
+  useTranslation();
   const regularCollections = useMemo(
     () => collections.filter((c: Collection) => !c.isSmart),
     [collections]
@@ -580,7 +595,7 @@ function CollectionsTab({
   return (
     <div className={styles.tagsGrid}>
       {regularCollections.length === 0 && (
-        <p className={styles.noTags}>No collections yet. Create collections in the sidebar.</p>
+        <p className={styles.noTags}>{tr("No collections yet. Create collections in the sidebar.")}</p>
       )}
       {regularCollections.map((col: Collection) => {
         const isMember = (col.assetIds && col.assetIds.includes(asset.id)) || (asset.collections?.includes(col.id) ?? false);
@@ -611,8 +626,20 @@ function PreviewTab({
   asset: Asset;
   onGeneratePreview: () => void;
 }) {
+  useTranslation();
   const modelPath = (asset.metadata?.preview_model as string) || (asset.thumbnailPath?.endsWith('.glb') ? asset.thumbnailPath : undefined);
-  const imagePath = asset.thumbnailPath && !asset.thumbnailPath.endsWith('.glb') ? asset.thumbnailPath : (['image', 'texture'].includes(asset.kind) ? asset.filePath : undefined);
+  const imagePath = asset.thumbnailPath && !asset.thumbnailPath.endsWith('.glb') ? asset.thumbnailPath : undefined;
+  const [videoPath, setVideoPath] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [videoRetry, setVideoRetry] = useState(0);
+  useEffect(() => {
+    setVideoPath(null); setVideoError(null);
+    if (asset.kind !== 'video') return;
+    let cancelled = false;
+    void api.resolveAssetFile(asset.id).then(path => { if (!cancelled) setVideoPath(path); })
+      .catch(error => { if (!cancelled) setVideoError(String(error)); });
+    return () => { cancelled = true; };
+  }, [asset.id, asset.kind, videoRetry]);
   const isPending = asset.previewStatus === 'pending' || asset.previewStatus === 'generating';
   const isError = asset.previewStatus === 'error';
 
@@ -625,23 +652,24 @@ function PreviewTab({
             className={styles.reGenerateOverlayBtn}
             onClick={onGeneratePreview}
             disabled={isPending}
-            title="Re-generate preview"
+            title={tr("Re-generate preview")}
           >
             <IconRefresh size={13} className={clsx(isPending && 'animate-spin')} />
-            <span>{isPending ? 'Generating…' : 'Regenerate Preview'}</span>
+            <span>{isPending ? tr("Generating…") : tr("Regenerate Preview")}</span>
           </button>
         </div>
       ) : (asset.kind === 'video' && asset.filePath) ? (
         <div className={styles.previewViewerWrapper}>
-          <video
-            src={convertFileSrc(asset.filePath)}
+          {videoError ? <div role="alert"><p>{translateMessage(videoError)}</p><button type="button" onClick={() => setVideoRetry(value => value + 1)}>{tr("Retry")}</button></div> : videoPath ? <video
+            src={convertFileSrc(videoPath)}
             controls
             autoPlay
             muted
             playsInline
             className={styles.previewImg}
             style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
-          />
+            onError={() => setVideoError("This video is unavailable or its codec is not supported. You can open it in the default application.")}
+          /> : <p role="status">{tr("Opening video…")}</p>}
         </div>
       ) : imagePath ? (
         <div className={styles.previewViewerWrapper}>
@@ -650,10 +678,10 @@ function PreviewTab({
             className={styles.reGenerateOverlayBtn}
             onClick={onGeneratePreview}
             disabled={isPending}
-            title="Re-generate preview"
+            title={tr("Re-generate preview")}
           >
             <IconRefresh size={13} className={clsx(isPending && 'animate-spin')} />
-            <span>{isPending ? 'Generating…' : 'Regenerate Preview'}</span>
+            <span>{isPending ? tr("Generating…") : tr("Regenerate Preview")}</span>
           </button>
         </div>
       ) : (
@@ -669,15 +697,15 @@ function PreviewTab({
           </div>
           <p className={styles.emptyStatusTitle}>
             {isPending
-              ? 'Generating preview…'
+              ? tr("Generating preview…")
               : isError
-              ? 'Preview generation failed previously'
-              : 'No preview available'}
+              ? tr("Preview generation failed previously")
+              : tr("No preview available")}
           </p>
           <p className={styles.emptyStatusSub}>
             {isPending
-              ? 'Please wait while the worker renders the model'
-              : 'Click below to run the preview engine worker for this file'}
+              ? tr("Please wait while the worker renders the model")
+              : tr("Click below to run the preview engine worker for this file")}
           </p>
           <button
             id="detail-generate-preview"
@@ -686,7 +714,7 @@ function PreviewTab({
             disabled={isPending}
           >
             <IconRefresh size={14} className={clsx(isPending && 'animate-spin')} />
-            <span>{isPending ? 'Generating…' : isError ? 'Retry Generate Preview' : 'Generate Preview'}</span>
+            <span>{isPending ? tr("Generating…") : isError ? tr("Retry Generate Preview") : tr("Generate Preview")}</span>
           </button>
         </div>
       )}

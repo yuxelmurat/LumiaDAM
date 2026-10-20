@@ -1,3 +1,4 @@
+import { t as tr, useTranslation } from '../../i18n';
 import { useState } from 'react';
 import { useAssetStore } from '../../store';
 import type { AssetKind, ColorLabel } from '../../types';
@@ -70,11 +71,13 @@ const EXTENSION_OPTIONS: ExtensionOption[] = [
 ];
 
 export function FilterBar() {
+  useTranslation();
   const { query, setFilter, setSort, search } = useAssetStore();
   const { filter, sort } = query;
   const [filterMode, setFilterMode] = useState<'software' | 'extension'>('software');
 
   const hasActiveFilters =
+    Object.values(filter.pathLabels ?? {}).some(Boolean) || !!filter.offlineOnly ||
     (filter.kinds?.length ?? 0) > 0 ||
     (filter.colorLabels?.length ?? 0) > 0 ||
     filter.rating !== undefined ||
@@ -155,6 +158,8 @@ export function FilterBar() {
       dateRange: undefined,
       sizeRange: undefined,
       previewStatus: undefined,
+      pathLabels: undefined,
+      offlineOnly: undefined,
     });
     search();
   };
@@ -172,19 +177,19 @@ export function FilterBar() {
               id="filter-favorites"
               className={clsx(styles.favoritePill, filter.isFavorite && styles.favoriteActive)}
               onClick={toggleFavorite}
-              title="Show only favorite assets"
+              title={tr("Show only favorite assets")}
             >
               <IconHeartFilled size={12} className={clsx(filter.isFavorite ? styles.heartActive : styles.heartMuted)} />
-              <span>Favorites</span>
+              <span>{tr("Favorites")}</span>
             </button>
             <button
               id="filter-unorganized"
               className={clsx(styles.pill, filter.unorganized && styles.active)}
               onClick={toggleUnorganized}
-              title="Filter assets not assigned to any collection (unorganized)"
+              title={tr("Filter assets not assigned to any collection (unorganized)")}
             >
               <IconInbox size={12} />
-              <span>Unorganized</span>
+              <span>{tr("Unorganized")}</span>
             </button>
             {KIND_OPTIONS.map(({ label, value }) => (
               <button
@@ -193,7 +198,7 @@ export function FilterBar() {
                 className={clsx(styles.pill, filter.kinds?.includes(value) && styles.active)}
                 onClick={() => toggleKind(value)}
               >
-                {label}
+                {tr(label)}
               </button>
             ))}
           </div>
@@ -208,7 +213,7 @@ export function FilterBar() {
                 id={`filter-color-${label}`}
                 className={clsx(styles.colorBtn, filter.colorLabels?.includes(label) && styles.colorActive)}
                 style={{ background: `var(--swatch-${label})` }}
-                title={label}
+                title={tr(label)}
                 onClick={() => toggleColorLabel(label)}
               />
             ))}
@@ -227,7 +232,7 @@ export function FilterBar() {
               search();
             }}
           >
-            <option value={0}>Any rating</option>
+            <option value={0}>{tr("Any rating")}</option>
             <option value={1}>★+</option>
             <option value={2}>★★+</option>
             <option value={3}>★★★+</option>
@@ -244,18 +249,18 @@ export function FilterBar() {
             value={sort.field}
             onChange={(e) => { setSort(e.target.value as never, sort.order); search(); }}
           >
-            <option value="date">Date</option>
-            <option value="name">Name</option>
-            <option value="size">Size</option>
-            <option value="rating">Rating</option>
-            <option value="favorite">Favorites</option>
-            <option value="kind">Kind</option>
+            <option value="date">{tr("Date")}</option>
+            <option value="name">{tr("Name")}</option>
+            <option value="size">{tr("Size")}</option>
+            <option value="rating">{tr("Rating")}</option>
+            <option value="favorite">{tr("Favorites")}</option>
+            <option value="kind">{tr("Kind")}</option>
           </select>
           <button
             id="filter-sort-order"
             className={styles.sortOrderBtn}
             onClick={() => { setSort(sort.field, sort.order === 'asc' ? 'desc' : 'asc'); search(); }}
-            title={sort.order === 'asc' ? 'Ascending' : 'Descending'}
+            title={sort.order === 'asc' ? tr("Ascending") : tr("Descending")}
           >
             {sort.order === 'asc' ? '↑' : '↓'}
           </button>
@@ -265,11 +270,10 @@ export function FilterBar() {
               id="filter-clear"
               className={styles.clearBtn}
               onClick={clearFilters}
-              title="Clear all filters"
+              title={tr("Clear all filters")}
             >
               <IconX size={12} />
-              Clear
-            </button>
+              {tr("Clear")} </button>
           )}
         </div>
       </div>
@@ -283,19 +287,19 @@ export function FilterBar() {
               id="filter-mode-software"
               className={clsx(styles.modeBtn, filterMode === 'software' && styles.modeActive)}
               onClick={() => setFilterMode('software')}
-              title="Filter by software application"
+              title={tr("Filter by software application")}
             >
               <IconLayers size={13} />
-              <span>Software</span>
+              <span>{tr("Software")}</span>
             </button>
             <button
               id="filter-mode-extension"
               className={clsx(styles.modeBtn, filterMode === 'extension' && styles.modeActive)}
               onClick={() => setFilterMode('extension')}
-              title="Filter by exact file extension"
+              title={tr("Filter by exact file extension")}
             >
               <IconFileText size={13} />
-              <span>File Type</span>
+              <span>{tr("File Type")}</span>
             </button>
           </div>
 
@@ -307,8 +311,7 @@ export function FilterBar() {
             className={clsx(styles.pill, activeExtCount === 0 && styles.active)}
             onClick={clearExtensions}
           >
-            All
-          </button>
+            {tr("All")} </button>
 
           {/* Software Mode Pills */}
           {filterMode === 'software' && (
@@ -327,10 +330,10 @@ export function FilterBar() {
                       '--sw-active-glow': `${sw.color}40`,
                     } as React.CSSProperties}
                     onClick={() => toggleSoftware(sw)}
-                    title={`Filter by ${sw.label} (${sw.extLabel})`}
+                    title={tr("Filter by {p0} ({p1})", { p0: tr(sw.label), p1: sw.extLabel })}
                   >
                     <span className={styles.swDot} style={{ background: sw.color }} />
-                    <span>{sw.label}</span>
+                    <span>{tr(sw.label)}</span>
                     <span className={styles.swExtBadge}>{sw.extLabel}</span>
                   </button>
                 );
@@ -349,9 +352,9 @@ export function FilterBar() {
                     id={`filter-ext-${ext}`}
                     className={clsx(styles.extPill, active && styles.extActive)}
                     onClick={() => toggleExtension(ext)}
-                    title={`${label} (${softwareHint})`}
+                    title={`${label} (${tr(softwareHint)})`}
                   >
-                    <span>{label}</span>
+                    <span>{tr(label)}</span>
                     <span className={styles.extSoftwareHint}>{softwareHint}</span>
                   </button>
                 );
@@ -375,36 +378,36 @@ export function FilterBar() {
               }
             }}
           >
-            <option value="">Specific Extension…</option>
-            <optgroup label="3D CAD & Models">
-              <option value="max">.max (3ds Max)</option>
-              <option value="3dm">.3dm (Rhino)</option>
-              <option value="rvt">.rvt (Revit Project)</option>
-              <option value="rfa">.rfa (Revit Family)</option>
-              <option value="skp">.skp (SketchUp)</option>
-              <option value="blend">.blend (Blender)</option>
-              <option value="fbx">.fbx (Filmbox 3D)</option>
-              <option value="obj">.obj (Wavefront OBJ)</option>
-              <option value="3ds">.3ds (3D Studio)</option>
+            <option value="">{tr("Specific Extension…")}</option>
+            <optgroup label={tr("3D CAD & Models")}>
+              <option value="max">{tr(".max (3ds Max)")}</option>
+              <option value="3dm">{tr(".3dm (Rhino)")}</option>
+              <option value="rvt">{tr(".rvt (Revit Project)")}</option>
+              <option value="rfa">{tr(".rfa (Revit Family)")}</option>
+              <option value="skp">{tr(".skp (SketchUp)")}</option>
+              <option value="blend">{tr(".blend (Blender)")}</option>
+              <option value="fbx">{tr(".fbx (Filmbox 3D)")}</option>
+              <option value="obj">{tr(".obj (Wavefront OBJ)")}</option>
+              <option value="3ds">{tr(".3ds (3D Studio)")}</option>
             </optgroup>
-            <optgroup label="Materials & Shaders">
-              <option value="vrmat">.vrmat (V-Ray Material)</option>
-              <option value="mat">.mat (3ds Max Material)</option>
+            <optgroup label={tr("Materials & Shaders")}>
+              <option value="vrmat">{tr(".vrmat (V-Ray Material)")}</option>
+              <option value="mat">{tr(".mat (3ds Max Material)")}</option>
             </optgroup>
-            <optgroup label="Vector & Layered">
-              <option value="psd">.psd (Photoshop)</option>
-              <option value="psb">.psb (Photoshop Big)</option>
-              <option value="ai">.ai (Illustrator)</option>
-              <option value="svg">.svg (Vector)</option>
+            <optgroup label={tr("Vector & Layered")}>
+              <option value="psd">{tr(".psd (Photoshop)")}</option>
+              <option value="psb">{tr(".psb (Photoshop Big)")}</option>
+              <option value="ai">{tr(".ai (Illustrator)")}</option>
+              <option value="svg">{tr(".svg (Vector)")}</option>
             </optgroup>
-            <optgroup label="Environment & HDRI">
-              <option value="exr">.exr (OpenEXR)</option>
-              <option value="hdr">.hdr (Radiance HDR)</option>
+            <optgroup label={tr("Environment & HDRI")}>
+              <option value="exr">{tr(".exr (OpenEXR)")}</option>
+              <option value="hdr">{tr(".hdr (Radiance HDR)")}</option>
             </optgroup>
-            <optgroup label="Textures">
-              <option value="jpg">.jpg (JPEG)</option>
-              <option value="png">.png (PNG)</option>
-              <option value="tif">.tif (TIFF)</option>
+            <optgroup label={tr("Textures")}>
+              <option value="jpg">{tr(".jpg (JPEG)")}</option>
+              <option value="png">{tr(".png (PNG)")}</option>
+              <option value="tif">{tr(".tif (TIFF)")}</option>
             </optgroup>
           </select>
 
@@ -415,7 +418,7 @@ export function FilterBar() {
               <button
                 className={styles.clearMiniBtn}
                 onClick={clearExtensions}
-                title="Clear extension filter"
+                title={tr("Clear extension filter")}
               >
                 <IconX size={10} />
               </button>

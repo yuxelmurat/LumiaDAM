@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { t as tr, useTranslation, translateMessage, formatNumber } from '../../i18n';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   useLibraryStore, useCollectionStore, useTagStore,
   useUIStore, useAssetStore,
 } from '../../store';
-import type { FilterSpec, ColorLabel } from '../../types';
+import type { FilterSpec, ColorLabel, FolderResult, Library } from '../../types';
+import { api } from '../../api';
 import {
   IconFolder, IconCollection, IconTag,
   IconChevronDown, IconChevronRight, IconPlus,
@@ -35,6 +37,7 @@ const getStartOfDay = () => {
 };
 
 export function Sidebar() {
+  useTranslation();
   const libraries = useLibraryStore((s) => s.libraries);
   const addLibrary = useLibraryStore((s) => s.addLibrary);
   const removeLibrary = useLibraryStore((s) => s.removeLibrary);
@@ -65,6 +68,16 @@ export function Sidebar() {
   const currentFilter = useAssetStore((s) => s.query.filter);
   const activeTagId = useAssetStore((s) => s.query.filter.tags?.[0] ?? null);
   const search = useAssetStore((s) => s.search);
+  const openFolder = useAssetStore((s) => s.openFolder);
+  const folderPath = useAssetStore((s) => s.query.folderPath);
+  const folderLibraryId = useAssetStore((s) => s.query.libraryId);
+  const [expandedLibraryIds, setExpandedLibraryIds] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (folderPath !== undefined && folderLibraryId) {
+      setExpandedLibraryIds((prev) => prev[folderLibraryId] ? prev : { ...prev, [folderLibraryId]: true });
+    }
+  }, [folderPath, folderLibraryId]);
 
   const [filterSubExpanded, setFilterSubExpanded] = useState({
     types: true,
@@ -122,7 +135,7 @@ export function Sidebar() {
       const selectedPath = await open({
         directory: true,
         multiple: false,
-        title: 'Select Library Folder',
+        title: tr("Select Library Folder"),
       });
       if (selectedPath && typeof selectedPath === 'string') {
         await addLibrary([selectedPath]);
@@ -155,7 +168,7 @@ export function Sidebar() {
       setIsCreatingTag(false);
     } catch (err) {
       console.error('Failed to create tag:', err);
-      setTagError('Failed to create tag');
+      setTagError("Failed to create tag");
     }
   };
 
@@ -190,7 +203,7 @@ export function Sidebar() {
       setIsCreatingCollection(false);
     } catch (err) {
       console.error('Failed to create collection:', err);
-      setCollectionError('Failed to create collection');
+      setCollectionError("Failed to create collection");
     }
   };
 
@@ -206,19 +219,31 @@ export function Sidebar() {
     search();
   };
 
-  const handleLibraryClick = (id: string, e?: React.MouseEvent) => {
+  const handleLibraryClick = (id: string, e?: React.MouseEvent | React.KeyboardEvent) => {
     setActiveSmartFilterId(null);
-    setActiveCollection(null);
     const isCheckbox = (e?.target as HTMLElement)?.tagName?.toLowerCase() === 'input';
     const isMulti = e ? Boolean(e.metaKey || e.ctrlKey || e.shiftKey || isCheckbox) : false;
-    toggleSelectedLibrary(id, isMulti);
+    if (isMulti) toggleSelectedLibrary(id, true);
+    else setActiveLibrary(id);
     const nextSelected = useUIStore.getState().selectedLibraryIds;
+    if (nextSelected.includes(id)) setExpandedLibraryIds((prev) => ({ ...prev, [id]: true }));
     setQuery({
       libraryIds: nextSelected.length > 0 ? nextSelected : undefined,
       libraryId: nextSelected.length === 1 ? nextSelected[0] : undefined,
       collectionId: undefined,
     });
     search();
+  };
+
+  const handleFolderClick = (folder: FolderResult) => {
+    setActiveSmartFilterId(null);
+    setActiveCollection(null);
+    // Sol ağaç koleksiyon kapsamından çıkar; dosya türü gibi açık filtreler korunur.
+    replaceFilter({ ...useAssetStore.getState().query.filter,
+      collectionId: undefined, collectionIds: undefined, collectionLogic: undefined,
+      includeSubcollections: undefined,
+    });
+    void openFolder(folder);
   };
 
   const handleCollectionClick = (id: string) => {
@@ -361,7 +386,7 @@ export function Sidebar() {
                   e.dataTransfer.dropEffect = 'copy';
                 }}
                 onDrop={(e) => handleDropOnCollection(e, col.id)}
-                title="Click to view; drag assets here to add"
+                title={tr("Click to view; drag assets here to add")}
                 role="button"
                 tabIndex={0}
               >
@@ -369,7 +394,7 @@ export function Sidebar() {
                   <span
                     className={styles.chevronBtn}
                     onClick={(e) => toggleCollectionExpanded(col.id, e)}
-                    title={isExpanded ? 'Collapse subcollections' : 'Expand subcollections'}
+                    title={isExpanded ? tr("Collapse subcollections") : tr("Expand subcollections")}
                   >
                     {isExpanded ? <IconChevronDown size={11} /> : <IconChevronRight size={11} />}
                   </span>
@@ -391,14 +416,14 @@ export function Sidebar() {
                       setIsCreatingCollection(true);
                       setExpandedColIds((prev) => ({ ...prev, [col.id]: true }));
                     }}
-                    title="Add subcollection"
+                    title={tr("Add subcollection")}
                   >
                     <IconPlus size={11} />
                   </span>
                   <span
                     className={clsx(styles.itemActionBtn, styles.itemActionBtnDanger)}
                     onClick={(e) => handleDeleteCollection(e, col.id, col.name)}
-                    title="Delete collection"
+                    title={tr("Delete collection")}
                   >
                     <IconTrash size={11} />
                   </span>
@@ -418,7 +443,7 @@ export function Sidebar() {
                     <input
                       type="text"
                       autoFocus
-                      placeholder="Subcollection name…"
+                      placeholder={tr("Subcollection name…")}
                       className={styles.createInput}
                       value={newCollectionName}
                       onChange={(e) => {
@@ -437,7 +462,7 @@ export function Sidebar() {
                     <button
                       type="submit"
                       className={clsx(styles.createBtn, styles.createBtnConfirm)}
-                      title="Save subcollection"
+                      title={tr("Save subcollection")}
                     >
                       <IconCheck size={12} />
                     </button>
@@ -450,12 +475,12 @@ export function Sidebar() {
                         setNewCollectionName('');
                         setCollectionError(null);
                       }}
-                      title="Cancel"
+                      title={tr("Cancel")}
                     >
                       <IconX size={12} />
                     </button>
                   </form>
-                  {collectionError && <span className={styles.formError}>{collectionError}</span>}
+                  {collectionError && <span className={styles.formError}>{translateMessage(collectionError)}</span>}
                 </div>
               )}
 
@@ -479,7 +504,7 @@ export function Sidebar() {
         onAdd={handleAddLibrary}
       >
         {libraries.length === 0 && (
-          <p className={styles.empty}>No libraries yet</p>
+          <p className={styles.empty}>{tr("No libraries yet")}</p>
         )}
         {libraries.length > 1 && (
           <div
@@ -488,60 +513,76 @@ export function Sidebar() {
             onClick={handleAllLibrariesClick}
             role="button"
             tabIndex={0}
-            title="Search across all libraries (none selected)"
+            title={tr("Search across all libraries (none selected)")}
           >
             <IconFolder size={13} />
             <span className={clsx(styles.itemName, 'truncate')} style={{ fontWeight: selectedLibraryIds.length === 0 ? 600 : 400 }}>
-              All Libraries
-            </span>
+              {tr("All Libraries")} </span>
             <span className={styles.badge}>
-              {libraries.reduce((sum, l) => sum + (l.assetCount || 0), 0).toLocaleString()}
+              {formatNumber(libraries.reduce((sum, l) => sum + (l.assetCount || 0), 0))}
             </span>
           </div>
         )}
         {libraries.map((lib) => {
           const isSelected = selectedLibraryIds.includes(lib.id);
           return (
-            <div
-              key={lib.id}
-              id={`lib-${lib.id}`}
-              className={clsx(styles.item, isSelected && styles.active)}
-              onClick={(e) => handleLibraryClick(lib.id, e)}
-              role="button"
-              tabIndex={0}
-              title="Click to select library; Ctrl+Click to select multiple"
-            >
-              {libraries.length > 1 && (
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleLibraryClick(lib.id, e);
-                  }}
-                  onChange={() => {}}
-                  style={{
-                    width: 13,
-                    height: 13,
-                    accentColor: 'var(--color-brand-500)',
-                    cursor: 'pointer',
-                    marginRight: 6,
-                  }}
-                  title="Toggle this library in filter"
-                />
-              )}
-              <IconFolder size={13} />
-              <span className={clsx(styles.itemName, 'truncate')}>{lib.name}</span>
-              <span className={styles.badge}>{(lib.assetCount || 0).toLocaleString()}</span>
-              <span
-                className={clsx(styles.itemActionBtn, styles.itemActionBtnDanger)}
-                onClick={(e) => handleRemoveLibrary(e, lib.id, lib.name)}
-                title="Remove library"
+            <div key={lib.id}>
+              <div
+                id={`lib-${lib.id}`}
+                className={clsx(styles.item, isSelected && folderPath === undefined && styles.active)}
+                onClick={(e) => handleLibraryClick(lib.id, e)}
+                onKeyDown={(e) => {
+                  if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault(); handleLibraryClick(lib.id, e);
+                  }
+                }}
                 role="button"
                 tabIndex={0}
+                title={tr("{p0}\nClick to browse; Ctrl+Click to select multiple libraries", { p0: lib.rootPaths.join('\n') })}
               >
-                <IconTrash size={11} />
-              </span>
+                <button type="button" className={styles.chevronBtn}
+                  aria-label={`${expandedLibraryIds[lib.id] ? tr("Collapse") : tr("Expand")} ${lib.name}`}
+                  aria-expanded={!!expandedLibraryIds[lib.id]}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setExpandedLibraryIds((prev) => ({ ...prev, [lib.id]: !prev[lib.id] }));
+                  }}>
+                  {expandedLibraryIds[lib.id] ? <IconChevronDown size={11} /> : <IconChevronRight size={11} />}
+                </button>
+                {libraries.length > 1 && (
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleLibraryClick(lib.id, e);
+                    }}
+                    onChange={() => {}}
+                    style={{
+                      width: 13,
+                      height: 13,
+                      accentColor: 'var(--color-brand-500)',
+                      cursor: 'pointer',
+                      marginRight: 6,
+                    }}
+                    title={tr("Toggle this library in filter")}
+                  />
+                )}
+                <IconFolder size={13} />
+                <span className={clsx(styles.itemName, 'truncate')}>{lib.name}</span>
+                <span className={styles.badge}>{formatNumber((lib.assetCount || 0))}</span>
+                <span
+                  className={clsx(styles.itemActionBtn, styles.itemActionBtnDanger)}
+                  onClick={(e) => handleRemoveLibrary(e, lib.id, lib.name)}
+                  title={tr("Remove library")}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <IconTrash size={11} />
+                </span>
+              </div>
+              {expandedLibraryIds[lib.id] && <LibraryFolderChildren library={lib} parentPath=""
+                activePath={folderLibraryId === lib.id ? folderPath : undefined} onNavigate={handleFolderClick} />}
             </div>
           );
         })}
@@ -571,7 +612,7 @@ export function Sidebar() {
               <input
                 type="text"
                 autoFocus
-                placeholder="Collection name…"
+                placeholder={tr("Collection name…")}
                 className={styles.createInput}
                 value={newCollectionName}
                 onChange={(e) => {
@@ -590,7 +631,7 @@ export function Sidebar() {
               <button
                 type="submit"
                 className={clsx(styles.createBtn, styles.createBtnConfirm)}
-                title="Save collection"
+                title={tr("Save collection")}
               >
                 <IconCheck size={12} />
               </button>
@@ -603,17 +644,17 @@ export function Sidebar() {
                   setNewCollectionName('');
                   setCollectionError(null);
                 }}
-                title="Cancel"
+                title={tr("Cancel")}
               >
                 <IconX size={12} />
               </button>
             </form>
-            {collectionError && <span className={styles.formError}>{collectionError}</span>}
+            {collectionError && <span className={styles.formError}>{translateMessage(collectionError)}</span>}
           </div>
         )}
 
         {collections.length === 0 && !isCreatingCollection && (
-          <p className={styles.empty}>No collections yet</p>
+          <p className={styles.empty}>{tr("No collections yet")}</p>
         )}
 
         {/* Recursive Tree renderer for collections */}
@@ -644,7 +685,7 @@ export function Sidebar() {
               <input
                 type="text"
                 autoFocus
-                placeholder="Tag name…"
+                placeholder={tr("Tag name…")}
                 className={styles.createInput}
                 value={newTagName}
                 onChange={(e) => {
@@ -662,7 +703,7 @@ export function Sidebar() {
               <button
                 type="submit"
                 className={clsx(styles.createBtn, styles.createBtnConfirm)}
-                title="Save tag"
+                title={tr("Save tag")}
               >
                 <IconCheck size={12} />
               </button>
@@ -674,17 +715,17 @@ export function Sidebar() {
                   setNewTagName('');
                   setTagError(null);
                 }}
-                title="Cancel"
+                title={tr("Cancel")}
               >
                 <IconX size={12} />
               </button>
             </form>
-            {tagError && <span className={styles.formError}>{tagError}</span>}
+            {tagError && <span className={styles.formError}>{translateMessage(tagError)}</span>}
           </div>
         )}
 
         {tags.length === 0 && !isCreatingTag && (
-          <p className={styles.empty}>No tags yet</p>
+          <p className={styles.empty}>{tr("No tags yet")}</p>
         )}
         {tags.map((tag) => {
           const isActiveFilter = activeTagId === tag.id;
@@ -694,7 +735,7 @@ export function Sidebar() {
               id={`tag-${tag.id}`}
               className={clsx(styles.item, isActiveFilter && styles.active)}
               onClick={() => handleTagFilter(tag.id)}
-              title={isActiveFilter ? 'Click to clear filter' : 'Click to filter by tag'}
+              title={isActiveFilter ? tr("Click to clear filter") : tr("Click to filter by tag")}
               role="button"
               tabIndex={0}
             >
@@ -709,7 +750,7 @@ export function Sidebar() {
               <span
                 className={clsx(styles.itemActionBtn, styles.itemActionBtnDanger)}
                 onClick={(e) => handleDeleteTag(e, tag.id, tag.name)}
-                title="Delete tag"
+                title={tr("Delete tag")}
                 role="button"
                 tabIndex={0}
               >
@@ -729,7 +770,7 @@ export function Sidebar() {
         onAdd={() => setIsCreatingSmartFilter(true)}
       >
         {collections.filter((c) => c.isSmart).length === 0 && (
-          <p className={styles.empty}>No smart filters yet</p>
+          <p className={styles.empty}>{tr("No smart filters yet")}</p>
         )}
         {collections
           .filter((c) => c.isSmart)
@@ -750,7 +791,7 @@ export function Sidebar() {
                 <span
                   className={clsx(styles.itemActionBtn, styles.itemActionBtnDanger)}
                   onClick={(e) => handleDeleteCollection(e, col.id, col.name)}
-                  title="Delete smart filter"
+                  title={tr("Delete smart filter")}
                   role="button"
                   tabIndex={0}
                 >
@@ -796,7 +837,7 @@ export function Sidebar() {
                   search();
                 }}
               >
-                <span className={clsx(styles.itemName, 'truncate')}>All assets</span>
+                <span className={clsx(styles.itemName, 'truncate')}>{tr("All assets")}</span>
               </button>
 
               <button
@@ -817,7 +858,7 @@ export function Sidebar() {
                 <span className={styles.favoriteIcon}>
                   <IconHeartFilled size={13} />
                 </span>
-                <span className={clsx(styles.itemName, 'truncate')}>Favorites</span>
+                <span className={clsx(styles.itemName, 'truncate')}>{tr("Favorites")}</span>
                 {isFavActive && <span className={styles.filterActiveChip}>●</span>}
               </button>
 
@@ -837,7 +878,7 @@ export function Sidebar() {
                 }}
               >
                 <IconInbox size={13} />
-                <span className={clsx(styles.itemName, 'truncate')}>Unorganized</span>
+                <span className={clsx(styles.itemName, 'truncate')}>{tr("Unorganized")}</span>
                 {isUnorgActive && <span className={styles.filterActiveChip}>●</span>}
               </button>
             </>
@@ -853,7 +894,7 @@ export function Sidebar() {
           >
             <span className={styles.subGroupTitle}>
               {filterSubExpanded.types ? <IconChevronDown size={10} /> : <IconChevronRight size={10} />}
-              <span>Types</span>
+              <span>{tr("Types")}</span>
               {currentFilter.kinds && currentFilter.kinds.length > 0 && (
                 <span className={styles.filterActiveChip}>●</span>
               )}
@@ -869,19 +910,18 @@ export function Sidebar() {
                   search();
                 }}
               >
-                Clear
-              </span>
+                {tr("Clear")} </span>
             )}
           </button>
           {filterSubExpanded.types && (
             <div className={styles.subGroupBody}>
               {([
-                { kind: '3d_model' as const, label: '3D Models', icon: <IconModel3D size={13} /> },
-                { kind: 'material' as const, label: 'Materials', icon: <IconLayers size={13} /> },
-                { kind: 'texture' as const, label: 'Textures', icon: <IconImage size={13} /> },
+                { kind: '3d_model' as const, label: tr("3D Models"), icon: <IconModel3D size={13} /> },
+                { kind: 'material' as const, label: tr("Materials"), icon: <IconLayers size={13} /> },
+                { kind: 'texture' as const, label: tr("Textures"), icon: <IconImage size={13} /> },
                 { kind: 'hdri' as const, label: 'HDRI', icon: <IconImage size={13} /> },
-                { kind: 'image' as const, label: 'Images', icon: <IconImage size={13} /> },
-                { kind: 'video' as const, label: 'Video', icon: <IconVideo size={13} /> },
+                { kind: 'image' as const, label: tr("Images"), icon: <IconImage size={13} /> },
+                { kind: 'video' as const, label: tr("Video"), icon: <IconVideo size={13} /> },
               ]).map(({ kind, label, icon }) => {
                 const isActive = currentFilter.kinds?.includes(kind);
                 return (
@@ -902,7 +942,7 @@ export function Sidebar() {
                     }}
                   >
                     {icon}
-                    <span className={clsx(styles.itemName, 'truncate')}>{label}</span>
+                    <span className={clsx(styles.itemName, 'truncate')}>{tr(label)}</span>
                     {isActive && <span className={styles.filterActiveChip}>●</span>}
                   </button>
                 );
@@ -920,7 +960,7 @@ export function Sidebar() {
           >
             <span className={styles.subGroupTitle}>
               {filterSubExpanded.ratings ? <IconChevronDown size={10} /> : <IconChevronRight size={10} />}
-              <span>Ratings</span>
+              <span>{tr("Ratings")}</span>
               {currentFilter.rating && <span className={styles.filterActiveChip}>●</span>}
             </span>
             {currentFilter.rating && (
@@ -934,8 +974,7 @@ export function Sidebar() {
                   search();
                 }}
               >
-                Clear
-              </span>
+                {tr("Clear")} </span>
             )}
           </button>
           {filterSubExpanded.ratings && (
@@ -965,7 +1004,7 @@ export function Sidebar() {
                     }}
                   >
                     <IconStar size={12} className={styles.starActive} />
-                    <span className={clsx(styles.itemName, 'truncate')}>{label}</span>
+                    <span className={clsx(styles.itemName, 'truncate')}>{tr(label)}</span>
                     {isActive && <span className={styles.filterActiveChip}>●</span>}
                   </button>
                 );
@@ -983,7 +1022,7 @@ export function Sidebar() {
           >
             <span className={styles.subGroupTitle}>
               {filterSubExpanded.colors ? <IconChevronDown size={10} /> : <IconChevronRight size={10} />}
-              <span>Color Labels</span>
+              <span>{tr("Color Labels")}</span>
               {currentFilter.colorLabels && currentFilter.colorLabels.length > 0 && (
                 <span className={styles.filterActiveChip}>●</span>
               )}
@@ -999,8 +1038,7 @@ export function Sidebar() {
                   search();
                 }}
               >
-                Clear
-              </span>
+                {tr("Clear")} </span>
             )}
           </button>
           {filterSubExpanded.colors && (
@@ -1024,7 +1062,7 @@ export function Sidebar() {
                       }
                       search();
                     }}
-                    title={name}
+                    title={tr(name)}
                   />
                 );
               })}
@@ -1041,7 +1079,7 @@ export function Sidebar() {
           >
             <span className={styles.subGroupTitle}>
               {filterSubExpanded.dateAdded ? <IconChevronDown size={10} /> : <IconChevronRight size={10} />}
-              <span>Date Added</span>
+              <span>{tr("Date Added")}</span>
               {currentFilter.dateRange && <span className={styles.filterActiveChip}>●</span>}
             </span>
             {currentFilter.dateRange && (
@@ -1055,8 +1093,7 @@ export function Sidebar() {
                   search();
                 }}
               >
-                Clear
-              </span>
+                {tr("Clear")} </span>
             )}
           </button>
           {filterSubExpanded.dateAdded && (
@@ -1072,9 +1109,9 @@ export function Sidebar() {
                 const is30DaysActive = curFrom !== undefined && !isTodayActive && !is7DaysActive && curFrom >= thirtyDaysAgo - 10000;
 
                 return [
-                  { label: 'Today', from: todayStart, active: isTodayActive },
-                  { label: 'Last 7 Days', from: sevenDaysAgo, active: is7DaysActive },
-                  { label: 'Last 30 Days', from: thirtyDaysAgo, active: is30DaysActive },
+                  { label: tr("Today"), from: todayStart, active: isTodayActive },
+                  { label: tr("Last 7 Days"), from: sevenDaysAgo, active: is7DaysActive },
+                  { label: tr("Last 30 Days"), from: thirtyDaysAgo, active: is30DaysActive },
                 ].map(({ label, from, active }) => (
                   <button
                     key={label}
@@ -1091,7 +1128,7 @@ export function Sidebar() {
                       search();
                     }}
                   >
-                    <span className={clsx(styles.itemName, 'truncate')}>{label}</span>
+                    <span className={clsx(styles.itemName, 'truncate')}>{tr(label)}</span>
                     {active && <span className={styles.filterActiveChip}>●</span>}
                   </button>
                 ));
@@ -1109,7 +1146,7 @@ export function Sidebar() {
           >
             <span className={styles.subGroupTitle}>
               {filterSubExpanded.fileSize ? <IconChevronDown size={10} /> : <IconChevronRight size={10} />}
-              <span>File Size</span>
+              <span>{tr("File Size")}</span>
               {currentFilter.sizeRange && <span className={styles.filterActiveChip}>●</span>}
             </span>
             {currentFilter.sizeRange && (
@@ -1123,8 +1160,7 @@ export function Sidebar() {
                   search();
                 }}
               >
-                Clear
-              </span>
+                {tr("Clear")} </span>
             )}
           </button>
           {filterSubExpanded.fileSize && (
@@ -1152,7 +1188,7 @@ export function Sidebar() {
                       search();
                     }}
                   >
-                    <span className={clsx(styles.itemName, 'truncate')}>{label}</span>
+                    <span className={clsx(styles.itemName, 'truncate')}>{tr(label)}</span>
                     {isActive && <span className={styles.filterActiveChip}>●</span>}
                   </button>
                 );
@@ -1170,7 +1206,7 @@ export function Sidebar() {
           >
             <span className={styles.subGroupTitle}>
               {filterSubExpanded.previewStatus ? <IconChevronDown size={10} /> : <IconChevronRight size={10} />}
-              <span>Preview Status</span>
+              <span>{tr("Preview Status")}</span>
               {currentFilter.previewStatus && <span className={styles.filterActiveChip}>●</span>}
             </span>
             {currentFilter.previewStatus && (
@@ -1184,16 +1220,15 @@ export function Sidebar() {
                   search();
                 }}
               >
-                Clear
-              </span>
+                {tr("Clear")} </span>
             )}
           </button>
           {filterSubExpanded.previewStatus && (
             <div className={styles.subGroupBody}>
               {[
-                { label: 'Has Preview', status: 'done' as const },
-                { label: 'Pending / Generating', status: 'pending' as const },
-                { label: 'Needs Preview', status: 'none' as const },
+                { label: tr("Has Preview"), status: 'done' as const },
+                { label: tr("Pending / Generating"), status: 'pending' as const },
+                { label: tr("Needs Preview"), status: 'none' as const },
               ].map(({ label, status }) => {
                 const isActive = currentFilter.previewStatus === status;
                 return (
@@ -1213,7 +1248,7 @@ export function Sidebar() {
                     }}
                   >
                     <IconEye size={13} />
-                    <span className={clsx(styles.itemName, 'truncate')}>{label}</span>
+                    <span className={clsx(styles.itemName, 'truncate')}>{tr(label)}</span>
                     {isActive && <span className={styles.filterActiveChip}>●</span>}
                   </button>
                 );
@@ -1240,6 +1275,88 @@ export function Sidebar() {
   );
 }
 
+const FOLDER_PAGE_SIZE = 100;
+
+interface LibraryFolderChildrenProps {
+  library: Library;
+  parentPath: string;
+  activePath?: string;
+  onNavigate: (folder: FolderResult) => void;
+}
+
+export function LibraryFolderChildren({ library, parentPath, activePath, onNavigate }: LibraryFolderChildrenProps) {
+  useTranslation();
+  const [folders, setFolders] = useState<FolderResult[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const request = useRef(0);
+  const requestedPage = useRef(0);
+  const load = useCallback(async (nextPage: number) => {
+    const current = ++request.current;
+    requestedPage.current = nextPage;
+    setLoading(true); setError(false);
+    try {
+      // Yalnız yerel klasör indeksi okunur; galeri filtreleri ağacı gizlemez.
+      const result = await api.searchAssets({ resultScope: 'folders', page: 0, pageSize: FOLDER_PAGE_SIZE,
+        query: { text: '', filter: {}, sort: { field: 'name', order: 'asc' },
+          libraryId: library.id, folderPath: parentPath, folderPage: nextPage },
+      });
+      if (current !== request.current) return;
+      const children = result.folders.filter((folder) => {
+        const parent = folder.path.includes('/') ? folder.path.slice(0, folder.path.lastIndexOf('/')) : '';
+        return folder.libraryId === library.id && folder.path !== parentPath && parent === parentPath;
+      });
+      setFolders((prev) => nextPage === 0 ? children : [...prev, ...children]);
+      setTotal(result.folderTotal); setPage(nextPage);
+    } catch {
+      if (current === request.current) setError(true);
+    } finally {
+      if (current === request.current) setLoading(false);
+    }
+  }, [library.id, parentPath]);
+
+  useEffect(() => {
+    void load(0);
+    // Kapatılan dalın veya eski katalog sürümünün yanıtı yeni listeyi değiştiremez.
+    return () => { ++request.current; };
+  }, [load, library]);
+
+  return <div className={styles.subTree} role="group" aria-label={tr("Folders in {p0}", { p0: parentPath || library.name })} aria-busy={loading}>
+    {folders.map((folder) => <LibraryFolderNode key={folder.path} library={library} folder={folder}
+      activePath={activePath} onNavigate={onNavigate} />)}
+    {loading && <span className={styles.folderFeedback} role="status">{tr("Loading folders…")}</span>}
+    {error && <div className={styles.folderFeedback} role="alert">{tr("Unable to load folders.")} <button type="button" className={styles.folderMore} onClick={() => void load(requestedPage.current)}>{tr("Retry")}</button>
+    </div>}
+    {!loading && !error && folders.length === 0 && <span className={styles.folderFeedback}>{tr("No subfolders")}</span>}
+    {!loading && !error && (page + 1) * FOLDER_PAGE_SIZE < total &&
+      <button type="button" className={styles.folderMore} onClick={() => void load(page + 1)}>{tr("Show more folders")}</button>}
+  </div>;
+}
+
+export function LibraryFolderNode({ library, folder, activePath, onNavigate }: Omit<LibraryFolderChildrenProps, 'parentPath'> & { folder: FolderResult }) {
+  useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    if (activePath?.startsWith(`${folder.path}/`)) setExpanded(true);
+  }, [activePath, folder.path]);
+  return <div>
+    <div className={clsx(styles.item, activePath === folder.path && styles.active)}>
+      <button type="button" className={styles.chevronBtn} aria-expanded={expanded}
+        aria-label={`${expanded ? tr("Collapse") : tr("Expand")} ${folder.fullPath}`} onClick={() => setExpanded((prev) => !prev)}>
+        {expanded ? <IconChevronDown size={11} /> : <IconChevronRight size={11} />}
+      </button>
+      <button type="button" className={styles.folderName} title={folder.fullPath}
+        aria-current={activePath === folder.path ? 'page' : undefined}
+        onClick={() => { setExpanded(true); onNavigate(folder); }}>
+        <IconFolder size={13} /><span className="truncate">{folder.name}</span>
+      </button>
+    </div>
+    {expanded && <LibraryFolderChildren library={library} parentPath={folder.path} activePath={activePath} onNavigate={onNavigate} />}
+  </div>;
+}
+
 interface SidebarSectionProps {
   label: string;
   icon: React.ReactNode;
@@ -1252,16 +1369,17 @@ interface SidebarSectionProps {
 function SidebarSection({
   label, icon, expanded, onToggle, onAdd, children,
 }: SidebarSectionProps) {
+  useTranslation();
   return (
     <div className={styles.section}>
       <div className={styles.sectionHeader}>
         <button className={styles.sectionToggle} onClick={onToggle}>
           {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
           {icon}
-          <span className={styles.sectionLabel}>{label}</span>
+          <span className={styles.sectionLabel}>{tr(label)}</span>
         </button>
         {onAdd && (
-          <button className={styles.addBtn} onClick={onAdd} title={`Add ${label}`} id={`add-${label.toLowerCase()}`}>
+          <button className={styles.addBtn} onClick={onAdd} title={tr("Add {name}", { name: tr(label) })} id={`add-${label.toLowerCase()}`}>
             <IconPlus size={12} />
           </button>
         )}

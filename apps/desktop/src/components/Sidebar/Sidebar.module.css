@@ -1,12 +1,15 @@
 .sidebar {
   width: var(--sidebar-width);
+  min-width: 240px;
+  max-width: 600px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: var(--color-bg-surface);
   border-right: 1px solid var(--color-border);
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
+  resize: horizontal;
 }
 
 /* Sections */
@@ -257,10 +260,47 @@
 .subTree {
   display: flex;
   flex-direction: column;
+  min-width: max-content;
   position: relative;
   margin-left: 12px;
   padding-left: 6px;
   border-left: 1px solid var(--color-border);
+}
+
+.folderName {
+  flex: 1 0 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.folderName svg { flex-shrink: 0; }
+.folderFeedback {
+  padding: 4px var(--space-2);
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+.folderMore {
+  border: none;
+  background: transparent;
+  padding: 4px var(--space-2);
+  color: var(--color-brand-300);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.folderMore:hover { text-decoration: underline; }
+.item:focus-visible, .folderName:focus-visible, .chevronBtn:focus-visible {
+  outline: 2px solid var(--color-brand-400);
+  outline-offset: 2px;
 }
 
 /* Active filter indicator dot next to tag name */

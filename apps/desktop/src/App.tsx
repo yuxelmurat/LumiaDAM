@@ -1,3 +1,4 @@
+import { t as tr, useTranslation, translateMessage } from './i18n';
 import { lazy, Suspense, useEffect, useState, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { Sidebar } from './components/Sidebar/Sidebar';
@@ -16,8 +17,9 @@ import { EditorPanel, type EditorPanelHandle } from './components/Editor/EditorP
 import { editors, canOpenInEditor, editorForAsset, type EditorId } from './components/Editor/editors';
 import { message } from '@tauri-apps/plugin-dialog';
 import type { Asset } from './types';
-
-const CadViewer = lazy(() => import('./components/CadViewer/CadViewer').then(module => ({ default: module.CadViewer })));
+import { CadViewer } from './components/CadViewer/CadViewer';
+import { ViewerBoundary } from './components/ViewerBoundary';
+const LocalAISettings = lazy(() => import('./components/LocalAISettings').then(module => ({ default: module.LocalAISettings })));
 
 function isEditingText(): boolean {
   const active = document.activeElement;
@@ -27,6 +29,7 @@ function isEditingText(): boolean {
 }
 
 export default function App() {
+  useTranslation();
   const { sidebarOpen, detailPanelOpen, focusedAssetId } = useUIStore();
   const focusedAsset = useAssetStore((s) =>
     focusedAssetId ? s.assets.find((a) => a.id === focusedAssetId) ?? s.assetMap.get(focusedAssetId) ?? null : null
@@ -38,6 +41,7 @@ export default function App() {
 
   const [quickLookMode, setQuickLookMode] = useState<'hold' | 'persistent' | null>(null);
   const quickLookModeRef = useRef(quickLookMode);
+  useEffect(() => { if (quickLookMode && !focusedAsset) setQuickLookMode(null); }, [quickLookMode, focusedAsset]);
   quickLookModeRef.current = quickLookMode;
   const editorRef = useRef<EditorPanelHandle>(null);
   const [editorBusy, setEditorBusy] = useState(false);
@@ -51,6 +55,15 @@ export default function App() {
   const [assetsToDelete, setAssetsToDelete] = useState<string[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const toastTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    // Yalnız küçük ayar kaydı okunur; model ve durum sorguları açılışta başlatılmaz.
+    api.getLocalAiSettings().then(value => {
+      if (active && value.installRequested && !value.settings.setupComplete) setWorkspace('local-ai');
+    }).catch(console.error);
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     // Bootstrap data on mount
@@ -119,7 +132,7 @@ export default function App() {
             navigator.clipboard.writeText(paths.join('\n'));
             setCopyToast(
               paths.length === 1
-                ? 'Copied file path to clipboard'
+                ? "Copied file path to clipboard"
                 : `Copied ${paths.length} file paths to clipboard`
             );
             if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
@@ -143,7 +156,7 @@ export default function App() {
           }
           setCopyToast(
             ids.length === 1
-              ? newFav ? 'Added to favorites' : 'Removed from favorites'
+              ? newFav ? "Added to favorites" : "Removed from favorites"
               : newFav ? `Added ${ids.length} assets to favorites` : `Removed ${ids.length} assets from favorites`
           );
           if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
@@ -223,7 +236,7 @@ export default function App() {
     setDeleteDialogOpen(false);
     try {
       await useAssetStore.getState().deleteAssets(assetsToDelete, true);
-      setCopyToast(count === 1 ? 'Moved file to Recycle Bin' : `Moved ${count} files to Recycle Bin`);
+      setCopyToast(count === 1 ? "Moved file to Recycle Bin" : `Moved ${count} files to Recycle Bin`);
       if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
       toastTimeoutRef.current = window.setTimeout(() => setCopyToast(null), 2200);
     } catch (err) {
@@ -247,8 +260,8 @@ export default function App() {
     if (!(await editorRef.current?.confirmClose())) return;
     setEditorAsset(null); setEditorBusy(false); setWorkspace('library');
   };
-  const reportEditorError = (error: unknown) => message(`The editor could not complete the action: ${String(error)}`,
-    { title: 'LumiaDAM editor', kind: 'error' }).catch(console.error);
+  const reportEditorError = (error: unknown) => message(tr("The editor could not complete the action: {p0}", { p0: String(error) }),
+    { title: tr("LumiaDAM editor"), kind: 'error' }).catch(console.error);
   const openCadAsset = (asset: Asset | null) => {
     if (asset && ['dwg', 'dxf'].includes(asset.extension.toLowerCase())) setCadAsset(asset);
     setWorkspace('cad');
@@ -264,6 +277,7 @@ export default function App() {
         onOpenLibraries={() => setWorkspace('library')}
         onOpenEditor={editor => { void openEditorAsset(focusedAsset, editor).catch(reportEditorError); }}
         onOpenCad={() => openCadAsset(focusedAsset)}
+        onOpenLocalAi={() => { setWorkspace('local-ai'); setQuickLookMode(null); }}
         focusedAsset={focusedAsset}
       />
       <div className={styles.body} style={{ display: workspace === 'library' ? undefined : 'none' }}>
@@ -271,36 +285,49 @@ export default function App() {
         <main className={styles.main}>
           <AssetGrid onPreviewAsset={() => setQuickLookMode('persistent')} onOpenEditorAsset={openEditorAsset} onOpenCadAsset={openCadAsset} />
         </main>
-        {detailPanelOpen && <DetailPanel />}
+        {detailPanelOpen && <DetailPanel onPreviewAsset={(asset) => {
+          useAssetStore.getState().rememberAsset(asset); useUIStore.getState().selectAsset(asset.id); setQuickLookMode('persistent');
+        }} onOpenEditorAsset={openEditorAsset} onOpenCadAsset={openCadAsset} />}
       </div>
       <div className={styles.editorWorkspace} style={{ display: workspace !== 'library' ? undefined : 'none' }}>
-        <div style={{ height: '100%', display: workspace !== 'cad' && editorAsset && workspace === editorKind ? undefined : 'none' }}>
-          {editorAsset && <EditorPanel key={`${editorKind}:${editorAsset.id}`} ref={editorRef} asset={editorAsset} editor={editorKind} onBusyChange={setEditorBusy} />}
-        </div>
-        {workspace === 'cad' && cadAsset && <Suspense fallback={<div className={styles.editorEmpty}><p>Loading CAD Viewer…</p></div>}>
-          <CadViewer key={`${cadAsset.id}:${cadAsset.modifiedAt}`} asset={cadAsset} />
+        {workspace === 'local-ai' && <Suspense fallback={<p role="status">{tr("Loading Local AI…")}</p>}>
+          <LocalAISettings />
         </Suspense>}
+        <div style={{ height: '100%', display: workspace !== 'cad' && editorAsset && workspace === editorKind ? undefined : 'none' }}>
+          {editorAsset && <ViewerBoundary key={`${editorKind}:${editorAsset.id}`} onBack={() => setWorkspace('library')}>
+            <EditorPanel ref={editorRef} asset={editorAsset} editor={editorKind} onBusyChange={setEditorBusy} />
+          </ViewerBoundary>}
+        </div>
+        {workspace === 'cad' && cadAsset &&
+          <ViewerBoundary key={`${cadAsset.id}:${cadAsset.modifiedAt}`} onBack={() => setWorkspace('library')}>
+            <CadViewer asset={cadAsset} onBack={() => setWorkspace('library')} />
+          </ViewerBoundary>
+        }
         {workspace === 'cad' && !cadAsset && (
           <div className={styles.editorEmpty}>
             <img src="/brand/lumiadam-mark.png" alt="" />
-            <h2>CAD Viewer</h2>
-            <p>Select a DWG or DXF file in Libraries, then double-click it or choose Open in CAD Viewer.</p>
-            <button type="button" onClick={() => setWorkspace('library')}>Open Libraries</button>
+            <h2>{tr("CAD Viewer")}</h2>
+            <p>{tr("Select a DWG or DXF file in Libraries, then double-click it or choose Open in CAD Viewer.")}</p>
+            <button type="button" onClick={() => setWorkspace('library')}>{tr("Open Libraries")}</button>
           </div>
         )}
-        {workspace !== 'library' && workspace !== 'cad' && (!editorAsset || workspace !== editorKind) && (
+        {workspace !== 'library' && workspace !== 'cad' && workspace !== 'local-ai' && (!editorAsset || workspace !== editorKind) && (
           <div className={styles.editorEmpty}>
             <img src="/brand/lumiadam-mark.png" alt="" />
-            <h2>{editors[workspace].title}</h2>
-            <p>{editors[workspace].hint}</p>
-            <button type="button" onClick={() => setWorkspace('library')}>Open Libraries</button>
+            <h2>{tr(editors[workspace].title)}</h2>
+            <p>{tr(editors[workspace].hint)}</p>
+            <button type="button" onClick={() => setWorkspace('library')}>{tr("Open Libraries")}</button>
           </div>
         )}
       </div>
       {workspace === 'library' && <StatusBar />}
 
       {/* Spacebar Quick Look Modal */}
-      <QuickLookModal asset={focusedAsset} isOpen={quickLookMode !== null} persistent={quickLookMode === 'persistent'} onClose={() => setQuickLookMode(null)} />
+      {quickLookMode !== null && <div style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'var(--color-bg-base)' }}>
+        <ViewerBoundary key={focusedAsset?.id} onBack={() => setQuickLookMode(null)}>
+          <QuickLookModal asset={focusedAsset} isOpen persistent={quickLookMode === 'persistent'} onClose={() => setQuickLookMode(null)} />
+        </ViewerBoundary>
+      </div>}
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDeleteDialog
@@ -309,7 +336,7 @@ export default function App() {
         itemName={
           assetsToDelete.length === 1
             ? useAssetStore.getState().getById(assetsToDelete[0])?.fileName || '1 file'
-            : `${assetsToDelete.length} files`
+            : tr("{p0} files", { p0: assetsToDelete.length })
         }
         onConfirm={handleConfirmAppDelete}
         onCancel={() => {
@@ -322,7 +349,7 @@ export default function App() {
       {copyToast && (
         <div className={styles.copyToast}>
           <IconCheck size={14} className={styles.toastCheck} />
-          <span>{copyToast}</span>
+          <span>{translateMessage(copyToast)}</span>
         </div>
       )}
     </div>

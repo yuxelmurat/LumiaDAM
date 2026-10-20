@@ -7,7 +7,7 @@
 | Görünen ad / pencere başlığı | `LumiaDAM` |
 | Tauri identifier | `io.github.yuxelmurat.lumiadam` |
 | Windows executable | `lumiadam-desktop.exe` |
-| Installer / kısayol | `LumiaDAM_0.1.0_x64-setup.exe` / `LumiaDAM.lnk` |
+| Installer / kısayol | `LumiaDAM_0.1.1_x64-setup.exe` / `LumiaDAM.lnk` |
 | Start Menu klasörü | `LumiaDAM` |
 | Paketler | `lumiadam`, `@lumiadam/desktop`, `@lumiadam/dcc-bridge` |
 | Rust crate / library | `lumiadam-desktop` / `lumiadam_desktop_lib` |

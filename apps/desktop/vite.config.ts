@@ -31,6 +31,8 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
+      // CAD worker'ı düzeltilmiş motoru kullanır; node_modules değişmez.
+      '../../wasm/exav_viewer_dwg.js': resolve(__dirname, '../../.cache/cad-viewer/wasm/exav_viewer_dwg.js'),
     },
   },
 }));

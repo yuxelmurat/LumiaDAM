@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/sylvinus/exav",
+  "commit": "47f24a5ded4876142c28dde8dcba7c0de5da434a",
+  "version": "0.0.2",
+  "unpackSha256": "ab00e7ba2e437437a209c04f0322296740654671e173507291ce109cf975f8c4",
+  "viewerSourceSha256": "409c661736a52c924ca7c6829a5a0893986e410d148e132e786fffb9631d967c",
+  "bindgenVersion": "0.2.129",
+  "windowsBindgenSha256": "79e348c169d0c10c0b287647f1e753d0985353ca96800bc29be8f4261baf13e6"
+}

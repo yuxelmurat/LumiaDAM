@@ -1,5 +1,5 @@
 use crate::{
-    db::{make_relative_path, resolve_path, LibraryHandle},
+    db::{make_relative_path, LibraryHandle},
     models::AssetKind,
     AppState,
 };
@@ -24,16 +24,16 @@ fn supported(extension: &str) -> bool {
 }
 
 #[derive(Clone, Copy)]
-enum Editor { Photo, Pdf, Vector, Cad }
+enum Editor { Photo, Pdf, Vector, Cad, CadCraft }
 impl Editor {
     fn parse(value: Option<&str>) -> Result<Self> {
         match value.unwrap_or("photo") {
-            "photo" => Ok(Self::Photo), "pdf" => Ok(Self::Pdf), "vector" => Ok(Self::Vector), "cad" => Ok(Self::Cad),
+            "photo" => Ok(Self::Photo), "pdf" => Ok(Self::Pdf), "vector" => Ok(Self::Vector), "cad" => Ok(Self::Cad), "cadcraft" => Ok(Self::CadCraft),
             _ => Err("Unknown editor".into()),
         }
     }
     fn name(self) -> &'static str {
-        match self { Self::Photo => "PhotoCraft", Self::Pdf => "PdfCraft", Self::Vector => "VectorCraft", Self::Cad => "CAD Viewer" }
+        match self { Self::Photo => "PhotoCraft", Self::Pdf => "PdfCraft", Self::Vector => "VectorCraft", Self::Cad => "CAD Viewer", Self::CadCraft => "CADCraft" }
     }
     fn supports(self, extension: &str, output: bool) -> bool {
         match self {
@@ -42,45 +42,26 @@ impl Editor {
             Self::Vector => matches!(extension, "svg" | "svgz" | "pdf" | "vectorcraft" | "jpg" | "jpeg" | "png" | "webp") ||
                 (!output && matches!(extension, "ai" | "drawcraft" | "bmp" | "tif" | "tiff" | "gif")),
             Self::Cad => !output && matches!(extension, "dwg" | "dxf"),
+            Self::CadCraft => matches!(extension, "dwg" | "dxf"),
         }
     }
 }
 
 async fn source(state: &AppState, id: &str, editor: Editor) -> Result<(LibraryHandle, PathBuf)> {
-    for library in state.db.get_all_libraries().await {
-        let path: Option<(String,)> = sqlx::query_as("SELECT file_path FROM assets WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&library.pool)
-            .await
-            .map_err(|e| e.to_string())?;
-        if let Some((path,)) = path {
-            let path = PathBuf::from(resolve_path(&library.root_path, &path));
-            let canonical = path.canonicalize().map_err(|e| e.to_string())?;
-            let root = library
-                .root_path
-                .canonicalize()
-                .map_err(|e| e.to_string())?;
-            if !canonical.starts_with(root) || !path.is_file() {
-                return Err("Source is outside the library or unavailable".into());
-            }
-            let extension = path
-                .extension()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            if !editor.supports(&extension, false) {
-                return Err("This format is not enabled in the editor yet".into());
-            }
-            return Ok((library, path));
-        }
-    }
-    Err("Source asset not found in an open library".into())
+    let (library,_,_,_,_) = crate::workflow::locate(&state.db,id).await.map_err(|e|e.to_string())?;
+    let path = crate::workflow::readable_path(&state.db,id).await.map_err(|e|e.to_string())?;
+    let extension = path.extension().and_then(|s|s.to_str()).unwrap_or("").to_ascii_lowercase();
+    if !editor.supports(&extension,false) { return Err("This format is not enabled in the editor yet".into()); }
+    Ok((library,path))
 }
 
 #[tauri::command]
 pub async fn read_editor_asset(id: String, editor: Option<String>, state: State<'_, Arc<AppState>>) -> Result<Response> {
     let editor = Editor::parse(editor.as_deref())?;
-    let (_, path) = source(&state, &id, editor).await?;
+    let path = tokio::time::timeout(std::time::Duration::from_secs(8),crate::workflow::readable_path(&state.db, &id)).await
+        .map_err(|_|"The source library did not respond in time. Reconnect it or use an offline copy.".to_string())?.map_err(|e| e.to_string())?;
+    let extension = path.extension().and_then(|value| value.to_str()).unwrap_or("").to_ascii_lowercase();
+    if !editor.supports(&extension, false) { return Err("This format is not enabled in the editor yet".into()); }
     let bytes = tokio::task::spawn_blocking(move || {
         use std::io::Read;
         let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
@@ -169,12 +150,19 @@ pub async fn save_editor_export(
     }
     let (library, source_path) = source(&state, &source_id, editor).await?;
     let _scan = library.scan_lock.lock().await;
-    let stem = source_path
+    let (_,_,original_name,_,_)=crate::workflow::locate(&state.db,&source_id).await.map_err(|e|e.to_string())?;
+    let stem = Path::new(&original_name)
         .file_stem()
         .and_then(|s| s.to_str())
         .ok_or("Invalid source name")?;
     let file_name = format!("{stem}_edited_{export_id}.{extension}");
-    let path = source_path.with_file_name(&file_name);
+    // Yerel kopyadan düzenleme NAS'a bağımlı değildir; yeni çıktılar ayrı exports klasöründe korunur.
+    let local = crate::storage::path_is_within(&source_path, &library.catalog_dir);
+    let path = if local {
+        let directory=library.catalog_dir.join("exports");
+        tokio::fs::create_dir_all(&directory).await.map_err(|e|e.to_string())?;
+        directory.join(&file_name)
+    } else { source_path.with_file_name(&file_name) };
     let write_path = path.clone();
     let data = bytes.clone();
     tokio::task::spawn_blocking(move || write_new(&write_path, &data))
@@ -196,6 +184,12 @@ pub async fn save_editor_export(
             .bind(&export_id).bind(&relative).bind(&file_name).bind(&extension).bind(AssetKind::from_extension(&extension).as_str())
             .bind(bytes.len() as i64).bind(modified).bind(now).bind(metadata).execute(&mut *tx).await?;
         let (asset_id,): (String,) = sqlx::query_as("SELECT id FROM assets WHERE file_path=?").bind(&relative).fetch_one(&mut *tx).await?;
+        crate::workflow::upsert(&mut tx, &asset_id, &relative, &extension, AssetKind::from_extension(&extension).as_str()).await?;
+        if local {
+            // Yerel çıktı, kaynak görselin kayıtlı klasör etiketlerini de taşır.
+            sqlx::query("UPDATE asset_workflow SET (year,source,room,renderer,inferred,overrides)=(SELECT year,source,room,renderer,inferred,json_object('year',year,'source',source,'room',room,'renderer',renderer) FROM asset_workflow WHERE asset_id=?) WHERE asset_id=? AND EXISTS(SELECT 1 FROM asset_workflow WHERE asset_id=?)")
+                .bind(&source_id).bind(&asset_id).bind(&source_id).execute(&mut *tx).await?;
+        }
         if !matches!(extension.as_str(), "pcraft" | "vectorcraft" | "svgz") {
             sqlx::query("INSERT INTO preview_jobs (id,asset_id,status,created_at) VALUES (?,?,'pending',?) ON CONFLICT(id) DO NOTHING")
                 .bind(&export_id).bind(&asset_id).bind(now).execute(&mut *tx).await?;
@@ -203,9 +197,10 @@ pub async fn save_editor_export(
             sqlx::query("UPDATE assets SET preview_status='none' WHERE id=?").bind(&asset_id).execute(&mut *tx).await?;
         }
         tx.commit().await?;
-        Ok::<String, sqlx::Error>(asset_id)
+        Ok::<String, anyhow::Error>(asset_id)
     }.await.map_err(|e| format!("Export saved at {} but catalog update failed: {e}. Keep the editor open and retry.", path.display()))?;
     let _ = state.app_handle.emit("library:updated", &library.id);
+    state.db.preview_wakeup.notify_waiters();
     Ok(ExportResult {
         file_path: path.to_string_lossy().into_owned(),
         asset_id: index,
@@ -246,7 +241,10 @@ mod tests {
         assert!(Editor::Cad.supports("dwg", false));
         assert!(Editor::Cad.supports("dxf", false));
         assert!(!Editor::Cad.supports("dwg", true));
-        for editor in [Editor::Photo, Editor::Pdf, Editor::Vector, Editor::Cad] {
+        assert!(Editor::parse(Some("cadcraft")).unwrap().supports("dwg", true));
+        assert!(Editor::CadCraft.supports("dxf", false));
+        assert!(!Editor::CadCraft.supports("zip", true));
+        for editor in [Editor::Photo, Editor::Pdf, Editor::Vector, Editor::Cad, Editor::CadCraft] {
             for ext in ["exe", "../pdf", "zip", "", "png/../../file"] {
                 assert!(!editor.supports(ext, false));
                 assert!(!editor.supports(ext, true));

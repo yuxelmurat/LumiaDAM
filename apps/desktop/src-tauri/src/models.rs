@@ -85,6 +85,22 @@ impl AssetKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Asset {
+    #[serde(rename = "libraryId", default)]
+    pub library_id: Option<String>,
+    #[serde(rename = "pathLabels", default)]
+    pub path_labels: crate::workflow::PathLabels,
+    #[serde(rename = "inferredLabels", default)]
+    pub inferred_labels: crate::workflow::PathLabels,
+    #[serde(rename = "labelOverrides", default)]
+    pub label_overrides: HashMap<String, String>,
+    #[serde(rename = "relatedMode", default)]
+    pub related_mode: String,
+    #[serde(rename = "groupFiles", default)]
+    pub group_files: Vec<crate::workflow::GroupFile>,
+    #[serde(rename = "offlinePath", default)]
+    pub offline_path: Option<String>,
+    #[serde(rename = "offlineStale", default)]
+    pub offline_stale: bool,
     pub id: String,
     #[serde(rename = "filePath")]
     pub file_path: String,
@@ -183,6 +199,8 @@ pub struct SearchPayload {
 
 #[derive(Debug, Deserialize)]
 pub struct SearchQuery {
+    #[serde(rename = "groupRelated", default)]
+    pub group_related: Option<bool>,
     #[serde(rename = "folderPath")]
     pub folder_path: Option<String>,
     #[serde(rename = "folderPage")]
@@ -202,6 +220,10 @@ pub struct SearchQuery {
 
 #[derive(Debug, Deserialize, Default, Clone)]
 pub struct FilterSpec {
+    #[serde(rename = "pathLabels", default)]
+    pub path_labels: Option<crate::workflow::PathLabels>,
+    #[serde(rename = "offlineOnly", default)]
+    pub offline_only: Option<bool>,
     pub kinds: Option<Vec<String>>,
     pub tags: Option<Vec<String>>,
     pub rating: Option<RatingRange>,

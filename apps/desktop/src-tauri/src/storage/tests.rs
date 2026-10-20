@@ -39,6 +39,51 @@ async fn opening_catalog_repairs_placeholder_name_without_rescanning() {
     close(db).await;
 }
 
+#[tokio::test]
+async fn opening_offline_catalog_repairs_zero_asset_count_from_local_database() {
+    let fixture = Fixture::new();
+    let source = fixture.0.join("Models");
+    std::fs::create_dir(&source).unwrap();
+    let db = fixture.database().await;
+    let id = Uuid::new_v4().to_string();
+    register_row(&db, &id, &source).await;
+    let library = db.register_library(&id, "Models", &source).await.unwrap();
+    for n in 0..4 {
+        sqlx::query("INSERT INTO assets(id,file_path,file_name,extension,kind,size_bytes,modified_at,indexed_at) VALUES(?,?,?,'jpg','image',1,1,1)")
+            .bind(format!("asset-{n}")).bind(format!("folder/{n}.jpg")).bind(format!("{n}.jpg"))
+            .execute(&library.pool).await.unwrap();
+    }
+    sqlx::query("UPDATE libraries SET asset_count=0 WHERE id=?").bind(&id).execute(&db.master_pool).await.unwrap();
+    close(db).await;
+    std::fs::remove_dir(&source).unwrap();
+
+    let db = fixture.database().await;
+    let count: i64 = sqlx::query_scalar("SELECT asset_count FROM libraries WHERE id=?").bind(&id).fetch_one(&db.master_pool).await.unwrap();
+    assert_eq!(count, 4, "count repair must use the local catalog even while the source is offline");
+    close(db).await;
+}
+
+#[tokio::test]
+async fn asset_collection_lookup_uses_reverse_index() {
+    let fixture = Fixture::new();
+    let source = fixture.0.join("Models");
+    std::fs::create_dir(&source).unwrap();
+    let db = fixture.database().await;
+    let id = Uuid::new_v4().to_string();
+    register_row(&db, &id, &source).await;
+    let library = db.register_library(&id, "Models", &source).await.unwrap();
+
+    let plan: Vec<(i64, i64, i64, String)> = sqlx::query_as(
+        "EXPLAIN QUERY PLAN SELECT collection_id FROM collection_assets WHERE asset_id = 'asset'",
+    )
+    .fetch_all(&library.pool)
+    .await
+    .unwrap();
+
+    assert!(plan.iter().any(|(_, _, _, detail)| detail.contains("idx_collection_assets_asset")), "unexpected query plan: {plan:?}");
+    close(db).await;
+}
+
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {
@@ -50,8 +95,149 @@ impl Fixture {
         Database::new(self.0.join("master.sqlite").to_str().unwrap(), self.0.join("local-libraries")).await.unwrap()
     }
 }
+
+#[tokio::test]
+async fn folder_labels_and_grouped_pages_work_offline_without_crossing_directories() {
+    let fixture=Fixture::new();let source=fixture.0.join("NAS");
+    std::fs::create_dir_all(source.join("2023/3dsky/kitchen/corona")).unwrap();
+    std::fs::create_dir_all(source.join("2025/bedroom")).unwrap();
+    for path in ["2023/3dsky/kitchen/corona/9.zip","2023/3dsky/kitchen/corona/9.jpg","2023/3dsky/kitchen/corona/8.zip","2023/3dsky/kitchen/corona/8_render.jpg","2025/bedroom/9.jpg"] {
+        std::fs::write(source.join(path),path.as_bytes()).unwrap();
+    }
+    let db=fixture.database().await;let id=Uuid::new_v4().to_string();register_row(&db,&id,&source).await;
+    let lib=db.register_library(&id,"NAS",&source).await.unwrap();
+    crate::watcher::index_paths(&db,&id,&[source.to_string_lossy().into_owned()]).await.unwrap();
+    std::fs::rename(&source,fixture.0.join("disconnected")).unwrap();
+    let query=serde_json::json!({"groupRelated":true,"filter":{"pathLabels":{"year":"2023","source":"3dsky","room":"Kitchen","renderer":"Corona"}}});
+    let grouped=search_catalog(&db,query.clone(),1).await;
+    assert_eq!(grouped.total,2);assert_eq!(grouped.assets.len(),1);
+    assert_eq!(grouped.assets[0].extension,"zip");assert_eq!(grouped.assets[0].group_files.len(),2);
+    assert!(grouped.assets[0].group_files.iter().all(|file|file.file_path.contains("kitchen")));
+    // Açılış sorgusu da filtreli gruplayıcıyla aynı grupları ve kararlı sayfaları döndürmeli.
+    let all=search_catalog(&db,serde_json::json!({"groupRelated":true}),100).await;
+    assert_eq!(all.total,3);assert_eq!(all.assets.len(),3);
+    assert_eq!(all.assets.iter().filter(|asset|asset.extension=="zip").count(),2);
+    assert_eq!(all.assets.iter().filter(|asset|asset.extension=="jpg").count(),1);
+    let first=search_catalog(&db,serde_json::json!({"groupRelated":true}),1).await;
+    let unfiltered_next=crate::models::SearchPayload {query:serde_json::from_value(serde_json::json!({"text":"","groupRelated":true,"filter":{},"sort":{"field":"name","order":"asc"}})).unwrap(),page:1,page_size:1,result_scope:Some("files".into())};
+    let next_page=crate::commands::asset::search_catalogs(unfiltered_next,&db).await.unwrap();
+    assert_eq!(first.assets[0].id,all.assets[0].id);assert_eq!(next_page.assets[0].id,all.assets[1].id);
+    let next=crate::models::SearchPayload {query:serde_json::from_value(serde_json::json!({"text":"","groupRelated":true,"filter":query["filter"],"sort":{"field":"name","order":"asc"}})).unwrap(),page:1,page_size:1,result_scope:Some("files".into())};
+    let second=crate::commands::asset::search_catalogs(next,&db).await.unwrap();
+    assert_ne!(grouped.assets[0].id,second.assets[0].id);
+    let images=search_catalog(&db,serde_json::json!({"groupRelated":true,"filter":{"extensions":["jpg"],"pathLabels":{"room":"Kitchen","year":"","source":"","renderer":""}}}),100).await;
+    assert_eq!(images.total,2);assert!(images.assets.iter().all(|asset|asset.extension=="jpg"));
+    sqlx::query("UPDATE assets SET is_favorite=1 WHERE extension='jpg'").execute(&lib.pool).await.unwrap();
+    let favorites=search_catalog(&db,serde_json::json!({"groupRelated":true,"filter":{"isFavorite":true,"pathLabels":{"room":"Kitchen","year":"","source":"","renderer":""}}}),100).await;
+    assert_eq!(favorites.total,2);assert!(favorites.assets.iter().all(|asset|asset.is_favorite && asset.extension=="jpg"));
+    close(db).await;
+}
+
+#[tokio::test]
+async fn user_label_corrections_survive_changed_source_and_restore_to_inferred_values() {
+    let fixture=Fixture::new();let source=fixture.0.join("NAS");std::fs::create_dir_all(source.join("2023/kitchen/corona")).unwrap();
+    let path=source.join("2023/kitchen/corona/9.zip");std::fs::write(&path,b"archive").unwrap();
+    let db=fixture.database().await;let library_id=Uuid::new_v4().to_string();register_row(&db,&library_id,&source).await;
+    let lib=db.register_library(&library_id,"NAS",&source).await.unwrap();
+    crate::watcher::index_paths(&db,&library_id,&[source.to_string_lossy().into_owned()]).await.unwrap();
+    let id:String=sqlx::query_scalar("SELECT id FROM assets").fetch_one(&lib.pool).await.unwrap();
+    sqlx::query("UPDATE asset_workflow SET overrides=? WHERE asset_id=?").bind(serde_json::json!({"room":"Office"}).to_string())
+        .bind(&id).execute(&lib.pool).await.unwrap();
+    std::fs::write(&path,b"changed archive contents").unwrap();
+    crate::watcher::index_paths(&db,&library_id,&[source.to_string_lossy().into_owned()]).await.unwrap();
+    let room:String=sqlx::query_scalar("SELECT room FROM asset_workflow WHERE asset_id=?").bind(&id).fetch_one(&lib.pool).await.unwrap();assert_eq!(room,"Office");
+    sqlx::query("UPDATE asset_workflow SET overrides='{}' WHERE asset_id=?").bind(&id).execute(&lib.pool).await.unwrap();
+    let mut connection=lib.pool.acquire().await.unwrap();crate::workflow::upsert(&mut connection,&id,"2023/kitchen/corona/9.zip","zip","other").await.unwrap();drop(connection);
+    let asset=search_catalog(&db,serde_json::json!({}),100).await.assets.remove(0);assert_eq!(asset.path_labels.room,"Kitchen");
+    assert_eq!(asset.inferred_labels.renderer,"Corona");close(db).await;
+}
+
+#[tokio::test]
+async fn full_offline_copy_reopens_without_source_and_survives_storage_transfer() {
+    let fixture=Fixture::new();let source=fixture.0.join("NAS");std::fs::create_dir(&source).unwrap();
+    std::fs::write(source.join("9.zip"),b"usable archive contents").unwrap();
+    let db=fixture.database().await;let library_id=Uuid::new_v4().to_string();register_row(&db,&library_id,&source).await;
+    let lib=db.register_library(&library_id,"NAS",&source).await.unwrap();
+    crate::watcher::index_paths(&db,&library_id,&[source.to_string_lossy().into_owned()]).await.unwrap();
+    let id:String=sqlx::query_scalar("SELECT id FROM assets").fetch_one(&lib.pool).await.unwrap();
+    crate::commands::workflow::cache_file(&db,id.clone(),None).await.unwrap();
+    let export_id=Uuid::new_v4().to_string();let exports=lib.catalog_dir.join("exports");std::fs::create_dir(&exports).unwrap();let export_path=exports.join("render.png");std::fs::write(&export_path,b"local render").unwrap();
+    sqlx::query("INSERT INTO assets(id,file_path,file_name,extension,kind,size_bytes,modified_at,indexed_at) VALUES(?,?,'render.png','png','image',12,1,1)").bind(&export_id).bind(export_path.to_string_lossy().as_ref()).execute(&lib.pool).await.unwrap();
+    crate::workflow::initialize(&lib.pool).await.unwrap();
+    let cache=crate::workflow::readable_path(&db,&id).await.unwrap();assert!(cache.starts_with(lib.catalog_dir.canonicalize().unwrap()));
+    assert!(std::fs::metadata(&cache).unwrap().permissions().readonly());
+    std::fs::rename(&source,fixture.0.join("disconnected")).unwrap();
+    assert!(crate::commands::workflow::cache_file(&db,id.clone(),None).await.is_err());
+    assert_eq!(std::fs::read(&cache).unwrap(),b"usable archive contents");
+    assert_eq!(std::fs::read(crate::workflow::readable_path(&db,&export_id).await.unwrap()).unwrap(),b"local render");
+    assert_eq!(std::fs::read(crate::workflow::readable_path(&db,&id).await.unwrap()).unwrap(),b"usable archive contents");
+    let target=fixture.0.join("new-storage");std::fs::create_dir(&target).unwrap();
+    sqlx::query("INSERT INTO settings(key,value) VALUES('storage_root',?)").bind(target.to_string_lossy().as_ref()).execute(&db.master_pool).await.unwrap();
+    close(db).await;
+    let db=fixture.database().await;let cache=crate::workflow::readable_path(&db,&id).await.unwrap();
+    assert!(cache.starts_with(target.canonicalize().unwrap()));assert_eq!(std::fs::read(cache).unwrap(),b"usable archive contents");
+    let export=crate::workflow::readable_path(&db,&export_id).await.unwrap();assert!(export.starts_with(target.canonicalize().unwrap()));assert_eq!(std::fs::read(export).unwrap(),b"local render");
+    let asset=search_catalog(&db,serde_json::json!({"filter":{"offlineOnly":true}}),100).await.assets.remove(0);assert!(asset.offline_path.is_some());assert!(!asset.offline_stale);
+    close(db).await;
+}
+
+#[tokio::test]
+async fn render_pin_rejects_other_folders_and_automatic_matching_can_be_restored() {
+    let fixture=Fixture::new();let source=fixture.0.join("NAS");std::fs::create_dir_all(source.join("kitchen")).unwrap();std::fs::create_dir_all(source.join("bedroom")).unwrap();
+    for path in ["kitchen/9.zip","kitchen/9.jpg","kitchen/8.jpg","bedroom/8.jpg"] {std::fs::write(source.join(path),b"asset").unwrap();}
+    let db=fixture.database().await;let library_id=Uuid::new_v4().to_string();register_row(&db,&library_id,&source).await;
+    let lib=db.register_library(&library_id,"NAS",&source).await.unwrap();crate::watcher::index_paths(&db,&library_id,&[source.to_string_lossy().into_owned()]).await.unwrap();
+    let rows:Vec<(String,String)>=sqlx::query_as("SELECT file_path,id FROM assets").fetch_all(&lib.pool).await.unwrap();let ids:std::collections::HashMap<_,_>=rows.into_iter().collect();
+    let zip=ids["kitchen/9.zip"].clone();
+    assert!(crate::commands::workflow::link_image(&db,zip.clone(),Some(ids["bedroom/8.jpg"].clone()),"pinned".into()).await.is_err());
+    assert!(crate::commands::workflow::link_image(&db,zip.clone(),Some(zip.clone()),"pinned".into()).await.is_err());
+    crate::commands::workflow::link_image(&db,zip.clone(),Some(ids["kitchen/8.jpg"].clone()),"pinned".into()).await.unwrap();
+    let query=serde_json::json!({"filter":{"extensions":["zip"]}});
+    let asset=search_catalog(&db,query.clone(),100).await.assets.remove(0);assert_eq!(asset.related_mode,"pinned");assert_eq!(asset.related_image.unwrap().id,ids["kitchen/8.jpg"]);
+    crate::commands::workflow::link_image(&db,zip.clone(),None,"none".into()).await.unwrap();assert!(search_catalog(&db,query.clone(),100).await.assets[0].related_image.is_none());
+    crate::commands::workflow::link_image(&db,zip,None,"auto".into()).await.unwrap();assert_eq!(search_catalog(&db,query,100).await.assets[0].related_image.as_ref().unwrap().id,ids["kitchen/9.jpg"]);close(db).await;
+}
+
+#[tokio::test]
+async fn outdated_offline_copy_is_reported_and_not_opened_as_the_current_version() {
+    let fixture=Fixture::new();let source=fixture.0.join("NAS");std::fs::create_dir(&source).unwrap();std::fs::write(source.join("9.max"),b"old").unwrap();
+    let db=fixture.database().await;let library_id=Uuid::new_v4().to_string();register_row(&db,&library_id,&source).await;
+    let lib=db.register_library(&library_id,"NAS",&source).await.unwrap();crate::watcher::index_paths(&db,&library_id,&[source.to_string_lossy().into_owned()]).await.unwrap();
+    let id:String=sqlx::query_scalar("SELECT id FROM assets").fetch_one(&lib.pool).await.unwrap();
+    crate::commands::workflow::cache_file(&db,id.clone(),None).await.unwrap();
+    std::fs::write(source.join("9.max"),b"new scene version").unwrap();crate::watcher::index_paths(&db,&library_id,&[source.to_string_lossy().into_owned()]).await.unwrap();
+    let asset=search_catalog(&db,serde_json::json!({}),100).await.assets.remove(0);assert!(asset.offline_stale);
+    assert_eq!(search_catalog(&db,serde_json::json!({"filter":{"offlineOnly":true}}),100).await.total,0);
+    std::fs::rename(source,fixture.0.join("disconnected")).unwrap();assert!(crate::workflow::readable_path(&db,&id).await.is_err());close(db).await;
+}
+
+#[tokio::test]
+async fn same_asset_has_independent_project_notes_and_nonmembers_are_rejected() {
+    let fixture=Fixture::new();let source=fixture.0.join("NAS");std::fs::create_dir(&source).unwrap();std::fs::write(source.join("9.jpg"),b"image").unwrap();
+    let db=fixture.database().await;let library_id=Uuid::new_v4().to_string();register_row(&db,&library_id,&source).await;
+    let lib=db.register_library(&library_id,"NAS",&source).await.unwrap();crate::watcher::index_paths(&db,&library_id,&[source.to_string_lossy().into_owned()]).await.unwrap();
+    let asset:String=sqlx::query_scalar("SELECT id FROM assets").fetch_one(&lib.pool).await.unwrap();
+    for project in ["project-a","project-b","project-c"] {
+        sqlx::query("INSERT INTO collections(id,name,created_at) VALUES(?,?,1)").bind(project).bind(project).execute(&db.master_pool).await.unwrap();
+        sqlx::query("INSERT INTO collections(id,name,created_at) VALUES(?,?,1)").bind(project).bind(project).execute(&lib.pool).await.unwrap();
+        if project!="project-c" {sqlx::query("INSERT INTO collection_assets(collection_id,asset_id) VALUES(?,?)").bind(project).bind(&asset).execute(&lib.pool).await.unwrap();}
+    }
+    for (project,note) in [("project-a","Warm oak for client A"),("project-b","White finish for client B")] {
+        crate::commands::workflow::save_note(&db,project.into(),asset.clone(),note.into()).await.unwrap();
+    }
+    assert!(crate::commands::workflow::save_note(&db,"project-c".into(),asset.clone(),"invalid".into()).await.is_err());
+    let rows:Vec<(String,String)>=sqlx::query_as("SELECT collection_id,note FROM project_notes ORDER BY collection_id").fetch_all(&db.master_pool).await.unwrap();assert_eq!(rows.len(),2);assert_ne!(rows[0].1,rows[1].1);
+    std::fs::rename(source,fixture.0.join("disconnected")).unwrap();close(db).await;
+    let db=fixture.database().await;assert_eq!(sqlx::query_scalar::<_,i64>("SELECT COUNT(*) FROM project_notes").fetch_one(&db.master_pool).await.unwrap(),2);close(db).await;
+}
 impl Drop for Fixture {
-    fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+    fn drop(&mut self) {
+        #[cfg(windows)]
+        for entry in walkdir::WalkDir::new(&self.0).follow_links(false).into_iter().filter_map(|entry|entry.ok()).filter(|entry|entry.file_type().is_file()) {
+            if let Ok(metadata)=entry.metadata() {let mut permissions=metadata.permissions();permissions.set_readonly(false);let _=std::fs::set_permissions(entry.path(),permissions);}
+        }
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 async fn close(db: Database) {

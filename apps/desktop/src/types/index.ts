@@ -34,6 +34,14 @@ export interface AssetMeta {
 }
 
 export interface Asset {
+  libraryId?: string;
+  pathLabels?: PathLabels;
+  inferredLabels?: PathLabels;
+  labelOverrides?: Partial<PathLabels>;
+  relatedMode?: 'auto' | 'pinned' | 'none';
+  groupFiles?: GroupFile[];
+  offlinePath?: string;
+  offlineStale?: boolean;
   id: string;
   /** Absolute path on the local filesystem */
   filePath: string;
@@ -89,6 +97,8 @@ export type SortField = 'name' | 'date' | 'size' | 'rating' | 'kind' | 'favorite
 export type SortOrder = 'asc' | 'desc';
 
 export interface FilterSpec {
+  pathLabels?: PathLabels;
+  offlineOnly?: boolean;
   kinds?: AssetKind[];
   tags?: string[];
   rating?: { min: number; max: number };
@@ -110,6 +120,7 @@ export interface FilterSpec {
 }
 
 export interface SearchQuery {
+  groupRelated?: boolean;
   folderPath?: string;
   folderPage?: number;
   text: string;
@@ -159,3 +170,11 @@ export interface SearchResult {
   page: number;
   pageSize: number;
 }
+
+export interface PathLabels { year: string; source: string; room: string; renderer: string }
+export interface GroupFile { id: string; fileName: string; filePath: string; extension: string; kind: string; thumbnailPath?: string }
+export interface Availability { sourceAvailable: boolean; offlineAvailable: boolean; offlineStale: boolean }
+export interface DuplicateFile { id: string; libraryId: string; fileName: string; filePath: string; sizeBytes: number; thumbnailPath?: string }
+export interface DuplicateGroup { kind: 'exact' | 'similar'; files: DuplicateFile[]; distance?: number }
+export interface DuplicateResult { groups: DuplicateGroup[]; groupCount: number; processed: number; total: number; skipped: number; cancelled: boolean; limited: boolean }
+export interface DuplicateProgress { processed: number; total: number; skipped: number; phase: string }

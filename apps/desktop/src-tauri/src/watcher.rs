@@ -39,13 +39,17 @@ fn path_key(path: &str) -> String {
     if cfg!(windows) { path.to_lowercase() } else { path }
 }
 
+fn available_watch_roots(roots: &[PathBuf]) -> Vec<PathBuf> {
+    roots.iter().filter(|root| root.is_dir()).cloned().collect()
+}
+
 fn excluded(path: &Path, internal: &[PathBuf]) -> bool {
     internal.iter().any(|parent| crate::storage::path_is_within(path, parent))
         || path.components().any(|part| part.as_os_str() == ".opendam")
         || (path.is_dir() && path.join(".lumiadam-catalog").exists())
 }
 
-async fn source_roots(db: &Database, library: &LibraryHandle) -> Result<Vec<PathBuf>> {
+pub(crate) async fn source_roots(db: &Database, library: &LibraryHandle) -> Result<Vec<PathBuf>> {
     let json: Option<String> = sqlx::query_scalar("SELECT root_paths FROM libraries WHERE id = ?")
         .bind(&library.id).fetch_optional(&db.master_pool).await?;
     Ok(match json {
@@ -207,9 +211,14 @@ async fn scan_paths(db: &Database, library_id: &str, paths: &[String]) -> Result
         tx.commit().await?;
         changed = true;
     }
-    if changed {
+    if changed || full_scan {
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM assets").fetch_one(&library.pool).await?;
-        sqlx::query("UPDATE libraries SET asset_count=? WHERE id=?").bind(count).bind(library_id).execute(&db.master_pool).await?;
+        let previous: Option<i64> = sqlx::query_scalar("SELECT asset_count FROM libraries WHERE id=?")
+            .bind(library_id).fetch_optional(&db.master_pool).await?;
+        if previous != Some(count) {
+            sqlx::query("UPDATE libraries SET asset_count=? WHERE id=?").bind(count).bind(library_id).execute(&db.master_pool).await?;
+            changed = true;
+        }
     }
     if full_scan {
         sqlx::query("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
@@ -237,6 +246,7 @@ async fn commit_asset_batch(pool: &sqlx::Pool<sqlx::Sqlite>, batch: &[PendingAss
             sqlx::query("INSERT INTO preview_jobs(id,asset_id,status,created_at) VALUES(?,?,'pending',?)")
                 .bind(Uuid::new_v4().to_string()).bind(&item.id).bind(item.now).execute(&mut *tx).await?;
         }
+        crate::workflow::upsert(&mut tx, &item.id, &item.file_path, &item.extension, item.kind_str).await?;
     }
     tx.commit().await?;
     Ok(())
@@ -246,6 +256,11 @@ async fn record_error(db: &Database, id: &str, error: &str) {
     tracing::warn!(library_id = id, error, "Library update failed; use manual Rescan if notifications are unavailable");
     let _ = sqlx::query("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         .bind(format!("scan_error:{id}")).bind(error).execute(&db.master_pool).await;
+}
+
+async fn clear_watch_error(db: &Database, id: &str) {
+    let _ = sqlx::query("DELETE FROM settings WHERE key = ? AND value LIKE 'Automatic file notifications are unavailable; use manual Rescan:%'")
+        .bind(format!("scan_error:{id}")).execute(&db.master_pool).await;
 }
 
 struct WatchRegistration {
@@ -355,12 +370,20 @@ pub fn start_library_watchers(state: Arc<AppState>) {
                                 Ok(roots) => roots,
                                 Err(error) => { record_error(&state.db, &library.id, &error.to_string()).await; continue; }
                             };
+                            let live_roots = available_watch_roots(&roots);
+                            if live_roots.len() < roots.len() { clear_watch_error(&state.db, &library.id).await; }
                             let needs_registration = state.watcher.lock().await.registrations.get(&library.id)
-                                .is_none_or(|current| current.roots != roots || (current._watcher.is_none() && Instant::now() >= current.retry_at));
+                                .is_none_or(|current| current.roots != live_roots || (current._watcher.is_none() && Instant::now() >= current.retry_at));
                             if !needs_registration { continue; }
+                            if live_roots.is_empty() {
+                                state.watcher.lock().await.registrations.insert(library.id.clone(), WatchRegistration {
+                                    roots: live_roots, _watcher: None, overflow: Arc::new(AtomicBool::new(false)), retry_at: Instant::now() + Duration::from_secs(30),
+                                });
+                                continue;
+                            }
                             let overflow = Arc::new(AtomicBool::new(false));
                             let build = tokio::task::spawn_blocking({
-                                let roots = roots.clone();
+                                let roots = live_roots.clone();
                                 let overflow = overflow.clone();
                                 let sender = events_tx.clone();
                                 let id = library.id.clone();
@@ -375,14 +398,18 @@ pub fn start_library_watchers(state: Arc<AppState>) {
                                 }
                             }).await;
                             let native = match build {
-                                Ok(Ok(watcher)) => Some(watcher),
+                                Ok(Ok(watcher)) => { clear_watch_error(&state.db, &library.id).await; Some(watcher) },
                                 result => {
-                                    record_error(&state.db, &library.id, &format!("Automatic file notifications are unavailable; use manual Rescan: {result:?}")).await;
+                                    if available_watch_roots(&roots).is_empty() {
+                                        clear_watch_error(&state.db, &library.id).await;
+                                    } else {
+                                        record_error(&state.db, &library.id, &format!("Automatic file notifications are unavailable; use manual Rescan: {result:?}")).await;
+                                    }
                                     None
                                 }
                             };
                             state.watcher.lock().await.registrations.insert(library.id.clone(), WatchRegistration {
-                                roots, _watcher: native, overflow, retry_at: Instant::now() + Duration::from_secs(30),
+                                roots: live_roots, _watcher: native, overflow, retry_at: Instant::now() + Duration::from_secs(30),
                             });
                         }
                     }

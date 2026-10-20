@@ -1,176 +1,171 @@
 <div align="center">
-  <img src="apps/desktop/public/brand/lumiadam-mark.png" width="148" alt="LumiaDAM logo" />
+  <img src="apps/desktop/public/brand/lumiadam-mark.png" width="132" alt="LumiaDAM logo" />
 
 # LumiaDAM
 
-**Find the right 3D asset without reorganizing your archive.**
+### Find the right asset in the archive you already have.
 
-A local-first digital asset manager for large 3D, CAD, architecture, material, texture, and reference libraries on Windows, local disks, and NAS storage.
+**A local-first digital asset manager for 3D models, textures, HDRI, EXR, CAD drawings, and interior design libraries.**
 
-[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows11&logoColor=white)](https://github.com/yuxelmurat/LumiaDAM)
-[![CI](https://github.com/yuxelmurat/LumiaDAM/actions/workflows/ci.yml/badge.svg)](https://github.com/yuxelmurat/LumiaDAM/actions/workflows/ci.yml)
+Search nested folders across Windows drives and NAS storage, preview assets, organize collections, and continue into image, PDF, vector, and CAD workflows—all from one desktop library.
+
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows11&logoColor=white)](https://github.com/yuxelmurat/LumiaDAM/releases)
+[![Latest release](https://img.shields.io/github/v/release/yuxelmurat/LumiaDAM?display_name=tag&color=22c55e)](https://github.com/yuxelmurat/LumiaDAM/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)](LICENSE)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)](https://tauri.app/)
 [![Rust](https://img.shields.io/badge/Backend-Rust-DEA584?logo=rust&logoColor=black)](https://www.rust-lang.org/)
 [![React](https://img.shields.io/badge/UI-React%20%2B%20TypeScript-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 
-[Features](#what-lumiadam-does) · [Workflow](#from-archive-to-edit) · [Build](#build-from-source) · [Roadmap](#roadmap) · [Support](#support-lumiadam)
+[Download for Windows](https://github.com/yuxelmurat/LumiaDAM/releases) · [Features](#what-you-can-do) · [Development status](#availability-and-development-status) · [Build from source](#build-from-source) · [Support](#support-lumiadam)
+
+<sub>Türkçe: LumiaDAM; 3D model, texture, HDRI/EXR, CAD ve iç mimari arşivlerini yerel disklerde veya NAS üzerinde kataloglayıp tam klasör yolunda arayan Windows uygulamasıdır. Görsel, PDF, vektör ve CAD iş akışlarını tek yerde toplar.</sub>
 </div>
 
 ---
 
-## Your archive already has structure. LumiaDAM makes it searchable.
+## Your archive already has structure. Make it searchable.
 
-Production libraries rarely arrive with clean metadata. They arrive as years of nested folders, purchased model packs, renderer variants, ZIP archives, numeric filenames, and preview renders:
+Real production libraries are built over years: purchased model packs, renderer-specific folders, render previews, numeric filenames, and inconsistent naming. LumiaDAM searches that structure instead of asking you to reorganize it.
 
 ```text
 A:/Model Archive/2025/Living Room/3dsky/Corona/2542154.zip
 A:/Model Archive/2025/Living Room/3dsky/Corona/2542154.jpg
 ```
 
-LumiaDAM indexes that structure into a local SQLite catalog. A search for `living corona` can find the asset through its full path even when the file itself is named `2542154.zip`. Browsing and filtering query the catalog instead of repeatedly walking the NAS.
+Search for `living corona` and find an asset through its folder path even when its filename is only a number. LumiaDAM catalogs file and folder metadata in a local SQLite database, so filters query the catalog instead of repeatedly searching a NAS from scratch.
 
-## What LumiaDAM does
+## What you can do
 
-|     | Capability                      | What it means in practice                                                                                                                                                   |
-| --- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🔎  | **Path-aware search**           | Search filenames, tags, and every folder segment. Multiple words can match different parts of the path.                                                                     |
-| 📁  | **Browsable folder results**    | Files and folders have separate tabs and counts. Open a matching folder, move up one level, or return to the previous result set.                                           |
-| ⚡  | **Local library catalogs**      | Databases and generated previews live under LumiaDAM's local data directory or a storage location you choose, keeping catalog writes away from the source NAS.              |
-| 🧭  | **All Libraries by default**    | Newly added drives and folders use their real root name and appear immediately in the combined library view.                                                                |
-| 🖼️  | **Visual previews**             | Standard images plus native HDR and EXR thumbnails. Supported 3D/CAD files can use embedded previews or the optional preview worker when available.                         |
-| 🔗  | **Related image matching**      | A model or archive can display a smaller sibling image such as `9.jpg` beside `9.zip`. Matching stays inside the same folder and avoids shared legacy thumbnail collisions. |
-| ✨  | **Built-in PhotoEditor**        | Open supported images in the bundled PhotoCraft editor without sending them to a web service. Exports become new cataloged assets beside the source file.                   |
-| 📄  | **Built-in PDFEditor**          | Open PDFs in the local PdfCraft workspace to read, annotate, fill forms and organize pages. Saves create a new PDF beside the source.                                       |
-| ✒️  | **Built-in VectorEditor**       | Use VectorCraft for SVG art, native vector projects, PDF-compatible AI files and supported images. Exports return to the library as new assets.                            |
-| 📐  | **Built-in CAD Viewer**         | Open DWG and DXF drawings locally, switch layouts and layers, and inspect details without launching AutoCAD or uploading the file.                                        |
-| 🏷️  | **Library organization**        | Tags, ratings, color labels, favorites, and nested collections help add structure without renaming source files.                                                            |
-| 👁️  | **Quick Look and file opening** | Double-click an image for a larger preview, a PDF for PDFEditor, or a vector project for VectorEditor. Other files open in their Windows default app.                        |
-| 📊  | **Visible background activity** | The status panel reports scan and preview progress, the last scan time, completed/remaining work, and a rescan action.                                                      |
+| Capability | How it helps |
+| --- | --- |
+| **Search by full path** | Match filenames and folder names together. Find `kitchen` in a deeply nested path such as year / vendor / room / renderer even when the model is called `2542154.zip`. |
+| **Browse the library tree** | Expand library folders in the sidebar, open folder search results, and move through the archive. Separate **Files** and **Folders** tabs show item counts. |
+| **Filter large asset libraries** | Narrow results by file type, 3D software, year, source, room, renderer, rating, color label, favorite, tag, or availability. |
+| **Keep the source archive intact** | Catalogs and generated thumbnails are stored locally or in a location you choose—not inside the source library. Cached previews can remain available while a NAS is offline. |
+| **Preview assets locally** | Browse image previews, including HDR and EXR tone-mapped previews where supported. Files without a preview remain searchable and can open in their Windows default application. |
+| **Pair render previews with models** | Show a likely sibling render such as `9.jpg` beside `9.zip`. Matching is constrained to the same folder to avoid unrelated thumbnails from elsewhere in the archive. |
+| **Organize without renaming files** | Use favorites, ratings, color labels, tags, nested collections, and smart filters while preserving original filenames and folders. |
+| **Review a project** | Compare selected assets and gather work in the Project Board with project-scoped notes. |
+| **See background work** | The activity panel reports scanning and preview progress, remaining work, failures, last scan time, and a rescan action. |
+| **Open files the way Windows expects** | Double-click or use the context menu to open a file in its associated desktop application. Use built-in workspaces for supported image, PDF, vector, and CAD files. |
 
-### Catalog every file, preview what LumiaDAM understands
+### LumiaDAM'in sundukları (Türkçe)
 
-LumiaDAM does not hide an asset because its format has no thumbnail. Regular files, unknown extensions, extensionless files, and archives are cataloged and remain searchable. ZIP contents are not extracted or indexed automatically.
+- Yerel disk, harici disk ve NAS kütüphanelerini tarar; dosya adıyla birlikte tüm klasör yolunda arama yapar.
+- Yıl, kaynak, mahal, yazılım, renderer ve dosya türü filtreleriyle derin klasör yapılarında gezinmeyi kolaylaştırır.
+- Veritabanını ve küçük resimleri kaynak kütüphaneden ayrı tutar; NAS çevrimdışıyken önbellekteki verileri göstermeye devam eder.
+- JPG/JPEG, PNG, HDR ve EXR gibi görselleri önizler; aynı klasördeki render görselini ZIP veya model dosyasıyla ilişkilendirebilir.
+- Fotoğraf, PDF, vektör ve CAD için PhotoEditor, PDFEditor, VectorEditor ve CAD Viewer çalışma alanları sunar.
+- Favori, puan, renk etiketi, etiket, koleksiyon, akıllı filtre, proje panosu ve dosya karşılaştırma araçları sağlar.
+- İsteğe bağlı yerel yapay zekâ, kullanıcı incelemesi için gruplama önerileri üretir; deneysel Max birleştirme iş akışı arşivdeki modeli açık sahneye taşımayı hedefler.
+- Tarama, önizleme, kalan işler ve kaynak erişim durumunu etkinlik panelinde gösterir.
 
-Preview support varies by format:
+### Formats and previews
 
-- **Images:** JPG/JPEG, PNG, WebP, BMP, TIFF, GIF, TGA, HDR, and EXR.
-- **Editable in PhotoEditor:** JPG/JPEG, PNG, WebP, BMP, TIFF, and layered `.pcraft` projects.
-- **3D/CAD and design files:** formats such as MAX, RVT/RFA, DWG/DXF, SKP, BLEND, C4D, 3DM, OBJ, FBX, GLTF/GLB, STL, materials, and IES files are indexed. DWG/DXF can be opened in the built-in CAD Viewer; thumbnail availability depends on embedded data and installed preview tooling.
+LumiaDAM catalogs files even when it cannot render a preview. Preview and editing support depend on file encoding, installed Windows providers, and the selected editor; indexing a format does not mean LumiaDAM fully parses or edits it.
 
-Indexing a format does not imply full geometry parsing, renderer compatibility detection, or one-click import into a DCC application.
+- **Images and environments:** JPG/JPEG, PNG, WebP, BMP, TIFF, GIF, TGA, HDR, and EXR. HDR/EXR preview availability depends on the decoder or Windows thumbnail provider available on the PC.
+- **3D and design libraries:** MAX, BLEND, C4D, 3DM, OBJ, FBX, GLTF/GLB, STL, SKP, RVT/RFA, materials, IES, and common archive formats are cataloged. Thumbnail availability varies.
+- **CAD drawings:** DWG and DXF can be opened in the local CAD Viewer. Newer DWG versions, custom/proxy entities, and external references may be incomplete.
+- **Archives:** ZIP and other supported archive files are cataloged as files. LumiaDAM does not silently unpack and index every archive as part of normal library scanning.
 
-## From archive to edit
+## Built-in creative workspaces
+
+The editor workspaces are bundled locally. Files are processed on the computer; LumiaDAM does not upload them to a hosted editing service.
+
+### PhotoEditor — image editing
+
+PhotoEditor packages a pinned local build of [PhotoCraft](https://github.com/storytold/photocraft). Open supported images from the library, edit in a full workspace, and export a new cataloged file beside the original. The LumiaDAM save bridge does not overwrite the source image. HDR, EXR, PSD, HEIF, and other formats outside the verified editor scope may still be preview-only or unsupported.
+
+### PDFEditor — PDF work
+
+PDFEditor packages [PdfCraft](https://github.com/storytold/pdfcraft) for opening PDFs in the app. Its current workspace supports PDF-focused tasks such as reading, annotation, forms, and page organization. Saves create a new cataloged PDF. This is an actively developed integration, not a claim of complete Acrobat parity.
+
+### VectorEditor — vector graphics
+
+VectorEditor packages [VectorCraft](https://github.com/storytold/vectorcraft). It supports SVG/SVGZ, VectorCraft projects, PDF-compatible AI files, PDFs, and supported bitmap images. Import/export coverage varies; it is not a promise of full Illustrator compatibility.
+
+### CAD Viewer and CADCraft — technical drawings
+
+The local CAD Viewer is based on the MIT-licensed [Exav Viewer](https://github.com/sylvinus/exav). It opens DWG and DXF drawings for quick inspection, with pan, zoom, fit-to-view, layouts, and layer visibility. Files stay on the computer; interactive viewing still needs the source file to be reachable.
+
+**CADCraft editing is experimental.** Some drawing entities or advanced DWG features may not round-trip correctly. Keep a backup of important drawings and verify saved files in your CAD application.
+
+## 3ds Max workflow — experimental
+
+The optional LumiaDAM 3ds Max plugin is designed to send compatible library models or archives into an open Max scene and gather available project files and references in the scene's asset folder. It can report missing renderers, plugins, or dependencies; optional V-Ray-to-Corona conversion depends on a compatible installed Corona Converter and user approval.
+
+Merge results vary with 3ds Max version, archive contents, file references, renderer, and installed plugins. Missing textures or unsupported materials can leave a scene incomplete. This integration is under active development: inspect the merge result and dependencies before rendering. The scene is not saved automatically, and source library files are preserved.
+
+## Optional local AI organizer — experimental
+
+LumiaDAM's local AI workflow is optional and designed to stay idle until the user chooses when it may run. It can review local catalog information and cached previews, then suggest categories and collection groupings for a person to review. The user does not write prompts, and suggestions do not silently move or delete source files.
+
+The model can run through a supported local provider such as Ollama or LM Studio. Model availability, speed, memory use, and visual analysis depend on the user's installation and hardware. Cloud image upload is not part of this workflow. AI organization is experimental; review recommendations before accepting them.
+
+Exact duplicate checks and visually similar preview suggestions are separate concepts: identical-content checks compare file content, while visual matches are candidates for human review. A similar-looking image is not proof that two source files are duplicates.
+
+## How the library stays responsive
 
 ```mermaid
 flowchart LR
-    A[Local disk or NAS library] --> B[Local SQLite catalog]
-    B --> C[Search full paths]
-    B --> D[Browse folders]
-    B --> E[Filter and organize]
-    C --> F[Quick Look or related preview]
+    A[Local drive or NAS] --> B[Local SQLite catalog]
+    B --> C[Search file and folder paths]
+    B --> D[Filter and browse folders]
+    B --> E[Read cached previews]
+    C --> F[Open, compare, or organize]
     D --> F
-    F --> G[PhotoEditor]
-    G --> H[New edited asset in the library]
+    F --> G[Photo / PDF / Vector / CAD workspace]
 ```
 
-1. Add a drive or root folder as a library.
-2. LumiaDAM catalogs its files and builds previews while reporting progress.
-3. Search by filename, folder, year, room, vendor, or renderer name.
-4. Browse the matching folder or refine the result with type and metadata filters.
-5. Open an image in **PhotoEditor**, export a new version, and keep the original untouched.
+LumiaDAM separates the source files from its searchable catalog and preview cache. A disconnected NAS can prevent opening the original file or generating a missing preview, but it does not require deleting the local catalog. Choose the catalog location in Settings; slower network storage for the catalog can make browsing slower.
 
-The application menu beside the LumiaDAM logo contains **Libraries**, **PhotoEditor**, **PDFEditor**, **VectorEditor**, **CAD Viewer**, **Settings**, **Help**, **About**, **FAQ**, and **Exit**. Help includes a quick start guide and keyboard shortcuts; FAQ explains catalog storage, search, previews, and editing. About shows the app version, license credits, project links, and a support link. Exit uses the normal window close request so an open editor can warn about unsaved work. Switching back to Libraries does not discard the current editor session.
-
-## Storage designed for real archives
-
-By default, LumiaDAM stores its catalogs and thumbnails under:
+By default, local data is stored under `%LOCALAPPDATA%/LumiaDAM/`:
 
 ```text
-%LOCALAPPDATA%/LumiaDAM/
-  data/                              # app settings and library list
-  libraries/
-    Library_Name--<unique-id>/
-      library.sqlite
-      thumbs/
+data/                         # settings and library list
+libraries/<name>--<id>/
+  library.sqlite
+  thumbs/
 ```
 
-The source library remains free of new database and thumbnail folders. You can choose another catalog location in **Settings**, with a clear warning that a slow disk or network destination will also slow search and preview access. Existing catalogs continue to work when the NAS is offline; opening source files and generating missing previews still require the source to be reachable.
+See the [storage and migration guide](docs/storage.md) and the [folder search guide](docs/folder-search.md).
 
-Grid, list, and sidebar thumbnails use the catalog cache. If a source is unavailable, new preview jobs wait and retry automatically; **Status** distinguishes this from active generation. On Windows, installed thumbnail providers supplement the built-in decoders, including HDR/EXR and formats recognized by Explorer. Results are saved locally; generic file icons are not treated as previews. Actual coverage depends on the installed providers and file encoding. See [offline previews](docs/offline-previews.md) for migration and testing details.
+## Availability and development status
 
-[Read the storage and migration guide](docs/storage.md) · [Read the folder search guide](docs/folder-search.md)
+LumiaDAM is open source and under active development. **The latest release is v0.1.1 for Windows x64**, available as an installable setup package. Experimental integrations and features still in development may change; check the [Releases page](https://github.com/yuxelmurat/LumiaDAM/releases) for the exact assets and release notes.
 
-## PhotoEditor
+The project evolves in reviewable steps. The local AI organizer, CADCraft editing, and 3ds Max merge workflow are explicitly experimental. Renderer/plugin conversion, full DWG editing fidelity, and broad compatibility with every file format are not guaranteed.
 
-LumiaDAM packages a pinned build of [PhotoCraft](https://github.com/storytold/photocraft) as a local web editor inside the desktop application.
+## Download and run
 
-- Images stay on the computer; the editor does not upload them to a hosted service.
-- Right-click a supported image or `.pcraft` project and choose **Open in PhotoEditor**. Unsupported files keep this action disabled.
-- The editor fills the workspace beneath a compact application bar. **Libraries** keeps the session open; replacing its source or choosing **Close editor** asks before discarding work.
-- Export writes a new `source_edited_<id>` file beside the original.
-- The new file is inserted into the catalog and queued for thumbnail generation without rescanning the entire library.
-- The original file is never overwritten by the LumiaDAM export bridge.
-- Failed saves remain visible and can be retried without sending duplicate exports.
+1. Open [LumiaDAM Releases](https://github.com/yuxelmurat/LumiaDAM/releases).
+2. Download `LumiaDAM_0.1.1_x64-setup.exe` from release `v0.1.1`.
+3. Run the installer on Windows 10/11 and follow its setup options.
 
-The integration currently supports one editor session and a 256 MB source/output limit. HDR, EXR, PSD, and HEIF editing are outside the verified editor scope even when LumiaDAM can preview some of those formats.
-
-[PhotoEditor usage, limits, and upstream update process](docs/PHOTOCRAFT.md)
-
-## PDF and vector workspaces
-
-**PDFEditor** and **VectorEditor** use pinned local builds of [PdfCraft](https://github.com/storytold/pdfcraft) and [VectorCraft](https://github.com/storytold/vectorcraft).
-Right-click a compatible library file to choose an editor; a PDF can also be opened by double-clicking.
-Both use the same full-window workspace and original-preserving save bridge as PhotoEditor.
-Only one editor session is active at a time; opening a different source or editor asks before discarding the current session.
-
-- **PDFEditor source/output:** PDF. Save and Save As create a new cataloged PDF; wait for LumiaDAM's **Saved** message.
-- **VectorEditor sources:** SVG/SVGZ, `.vectorcraft`/legacy `.drawcraft`, PDF-compatible AI, PDF and supported bitmap images.
-- **VectorEditor outputs:** SVG/SVGZ, PDF, `.vectorcraft`, JPG/JPEG, PNG and WebP.
-- Both upstream projects are in active development. AI import is limited to PDF-compatible files; full Illustrator or Acrobat parity is not promised.
-- Supplemental PDF conversions/downloads outside the LumiaDAM bridge and optional OCR models are outside this integration's verified scope.
-
-[Local editor builds, licensing and update process](docs/LOCAL-EDITORS.md)
-
-## CAD Viewer
-
-LumiaDAM uses the MIT-licensed [Exav Viewer](https://github.com/sylvinus/exav) to open DWG R13–R2018 and DXF drawings locally. Double-click a drawing or choose **Open in CAD Viewer** from its right-click menu. The full-window workspace provides pan, zoom, fit-to-view, model/paper layout selection, and per-layer visibility. Drawing data stays on the computer.
-
-When a drawing contains an embedded PNG or BMP preview, LumiaDAM stores a resized copy in the local thumbnail cache. That thumbnail remains available while a NAS or removable drive is offline; opening the interactive drawing still requires the source file. Drawings without an embedded preview may use an installed Windows thumbnail provider. External references, proxy/custom objects, and newer DWG versions may be incomplete, and the viewer currently accepts source files up to 256 MB.
-
-## Project status
-
-LumiaDAM is in active **v0.1.0 development**. The current codebase contains the Windows application, local catalog architecture, path-aware folder search, background status reporting, related previews, HDR/EXR thumbnails, three embedded editors, and a local DWG/DXF viewer.
-
-There is no public signed installer release yet. The Releases page will become the download source after the first tested package is published. Until then, build LumiaDAM from source and evaluate it with backed-up sample libraries.
+Back up valuable libraries before evaluating any in-development file operation.
 
 ## Build from source
 
 ### Requirements
 
 - Windows 10 or 11
-- Node.js 20+
-- pnpm 9+
+- Node.js 20+ and pnpm 9+
 - Rust stable with the MSVC toolchain
 - Visual Studio C++ Build Tools and Windows SDK
 - WebView2 Runtime
-- `wasm32-unknown-unknown` Rust target and Trunk 0.21.14 for PhotoEditor
-- Python 3.10+ and optional preview dependencies for the Python preview worker
+- Optional preview tooling or editor-specific dependencies for some formats
 
-### Development
+### Development commands
 
 ```powershell
 git clone https://github.com/yuxelmurat/LumiaDAM.git
 cd LumiaDAM
-
 pnpm install --frozen-lockfile
-rustup target add wasm32-unknown-unknown
-cargo install trunk --version 0.21.14 --locked
-
 pnpm dev
 ```
 
-### Checks and Windows package
+Run the checks relevant to the changed package:
 
 ```powershell
 pnpm --filter @lumiadam/desktop typecheck
@@ -179,62 +174,32 @@ pnpm --filter @lumiadam/desktop vite:build
 pnpm build
 ```
 
-Build artifacts are written under:
+Windows bundle output is written under `apps/desktop/src-tauri/target/release/bundle/`. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the repository layout and development workflow.
 
-```text
-apps/desktop/src-tauri/target/release/lumiadam-desktop.exe
-apps/desktop/src-tauri/target/release/bundle/
-```
+## Search terms
 
-The NSIS installer target is configured, but clean-computer installer validation is still part of the roadmap.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the repository layout and development workflow. Performance behavior, preview prerequisites, and repeatable checks are documented in [library performance](docs/library-performance.md) and the [local search benchmark](docs/library-search-benchmark.md).
-
-## Roadmap
-
-### Available now
-
-- [x] LumiaDAM application identity, Windows icons, installer naming, and navigation
-- [x] Local catalog and preview storage with configurable location
-- [x] Multi-library search backed by SQLite
-- [x] Full-path search and browsable folder results
-- [x] Separate Files and Folders views with counts
-- [x] Scan/preview activity panel and manual rescan
-- [x] Same-folder related preview matching
-- [x] Indexed path search, bounded query cache, and independent file/folder loading
-- [x] Incremental folder updates, visible preview priority, and adaptive activity polling
-- [x] Native HDR and EXR thumbnail generation
-- [x] Embedded local PhotoEditor with safe, non-destructive exports
-- [x] Local DWG/DXF viewer with layouts, layer visibility, and embedded preview caching
-
-### Planned
-
-- [ ] Clean-computer installer validation and a public signed release
-- [ ] 3ds Max bridge for sending renders directly into a library
-- [ ] PhotoEditor handoff from DCC render workflows
-- [ ] Broader preview coverage and packaged Python preview dependencies
-- [ ] NAS/SMB performance benchmarks and multi-machine catalog strategy
-- [ ] Safer file operations and recovery-focused deletion behavior
-
-Features in the planned list are not implemented promises or release commitments.
+LumiaDAM is a **3D asset manager**, **3D model library manager**, and **digital asset management (DAM) app for Windows**. It is built for **interior designers, architects, 3D artists, visualization studios, and asset librarians** who need to search **3D models, textures, materials, HDRI, EXR, CAD, DWG, DXF, render previews, and architecture libraries** across **nested folders, local drives, external disks, and NAS**. It includes local-first cataloging, a 3ds Max asset workflow, and PhotoEditor, PDFEditor, VectorEditor, and CAD workspaces.
 
 ## Support LumiaDAM
 
-LumiaDAM is free and open source. If the project saves time in your asset workflow, you can support its continued development:
+LumiaDAM is free and open source. If it helps your workflow, you can support development:
 
 <a href="https://buymeacoffee.com/yuxelmurat8"><img src="https://img.shields.io/badge/Buy_me_a_coffee-Support_LumiaDAM-FFDD00?logo=buymeacoffee&logoColor=000000" alt="Support LumiaDAM on Buy Me a Coffee" /></a>
 
-You can also help by testing with real-world libraries, documenting reproducible bugs, or contributing focused pull requests.
+You can also help by testing with real libraries, reporting reproducible issues, or contributing focused pull requests.
 
 ## License and credits
 
-LumiaDAM is distributed under the [MIT License](LICENSE). The original copyright notice for OpenDAM Contributors remains in the license as required.
+LumiaDAM is distributed under the [MIT License](LICENSE). The original OpenDAM copyright and attribution notice is preserved in the license.
 
-LumiaDAM began from the MIT-licensed [OpenDAM](https://github.com/LawLaw09/OpenDAM) codebase and has since introduced its own product identity, local catalog storage model, archive-focused search and folder navigation, preview behavior, status interface, and PhotoEditor workflow.
+LumiaDAM began from the MIT-licensed [OpenDAM](https://github.com/LawLaw09/OpenDAM) codebase and has developed a distinct product identity, local catalog and storage model, archive-focused search, folder navigation, preview cache, and creative workflow.
 
-The embedded image editor is based on [PhotoCraft](https://github.com/storytold/photocraft), licensed under MIT OR Apache-2.0. Its license and attribution files are preserved in packaged builds.
+- [PhotoCraft](https://github.com/storytold/photocraft) — image editor; MIT OR Apache-2.0.
+- [PdfCraft](https://github.com/storytold/pdfcraft) — PDF editor.
+- [VectorCraft](https://github.com/storytold/vectorcraft) — vector editor.
+- [Exav Viewer](https://github.com/sylvinus/exav) — MIT-licensed DWG/DXF viewer and embedded drawing preview support.
 
-DWG/DXF viewing and embedded drawing preview extraction use the MIT-licensed [Exav Viewer and exav-render](https://github.com/sylvinus/exav). LumiaDAM pins their versions so upstream updates can be reviewed and tested before adoption.
+Third-party components remain subject to their respective licenses. LumiaDAM pins upstream editor builds so updates can be reviewed and tested before adoption.
 
 ---
 

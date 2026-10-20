@@ -1,3 +1,4 @@
+import { t as tr, useTranslation } from '../../i18n';
 import { Canvas } from '@react-three/fiber';
 import { useGLTF, Stage, PresentationControls } from '@react-three/drei';
 import { Suspense, Component, type ReactNode } from 'react';
@@ -35,18 +36,19 @@ class ThreeErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryStat
 }
 
 function Model({ url }: { url: string }) {
+  useTranslation();
   const fileUrl = convertFileSrc(url);
   const { scene } = useGLTF(fileUrl);
   return <primitive object={scene} />;
 }
 
 export function ThreeViewer({ modelPath }: { modelPath: string }) {
+  useTranslation();
   return (
     <ThreeErrorBoundary
       fallback={
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-muted)', fontSize: 13 }}>
-          Unable to render 3D preview
-        </div>
+          {tr("Unable to render 3D preview")} </div>
       }
     >
       <Canvas shadows dpr={[1, 2]} camera={{ fov: 50 }}>

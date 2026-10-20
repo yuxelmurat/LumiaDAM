@@ -33,6 +33,9 @@ pub async fn initialize(pool: &sqlx::SqlitePool) -> Result<()> {
     sqlx::query(include_str!("../migrations/005_preview_queue.sql"))
         .execute(&mut *tx)
         .await?;
+    // İki bekleyen durum birlikte sıralanırken tüm kuyruk için geçici tablo oluşmasın.
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_preview_ready ON preview_jobs(priority DESC,created_at,id,asset_id,lane) WHERE status IN ('queued','pending')")
+        .execute(&mut *tx).await?;
     // Özet varsa büyük iş tablosunda tekrar aggregate sorgusu çalıştırılmaz.
     let initialized: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM preview_summary WHERE id=1)")
@@ -365,6 +368,10 @@ struct ClaimedJob {
 
 /// Tek SQLite yazısı hem seçer hem sahiplenir; iki şerit aynı işi alamaz.
 async fn claim_job(pool: &sqlx::SqlitePool, native: bool) -> Result<Option<ClaimedJob>> {
+    claim_ready_job(pool,native,None).await
+}
+
+async fn claim_ready_job(pool: &sqlx::SqlitePool, native: bool, local_prefix: Option<&str>) -> Result<Option<ClaimedJob>> {
     // Boş kuyrukta yazma kilidi alan sahiplenme sorgusunu çalıştırma.
     let pending: i64 = sqlx::query_scalar("SELECT pending FROM preview_summary WHERE id=1").fetch_one(pool).await?;
     if pending == 0 { return Ok(None); }
@@ -373,9 +380,12 @@ async fn claim_job(pool: &sqlx::SqlitePool, native: bool) -> Result<Option<Claim
     } else {
         format!("(p.lane = 'python' OR lower(a.extension) NOT IN ({NATIVE_EXTENSIONS}))")
     };
+    let local_clause=if local_prefix.is_some() { "AND (p.error_message IS NULL OR p.error_message <> 'Local copy unavailable') AND p.asset_id IN (SELECT o.asset_id FROM offline_assets o JOIN assets cached ON cached.id=o.asset_id WHERE o.size_bytes=cached.size_bytes AND o.modified_at=cached.modified_at UNION SELECT id FROM assets WHERE replace(file_path,char(92),'/')>=? AND replace(file_path,char(92),'/')<?)" } else { "" };
+    // NAS beklerken küçük yerel aday listesiyle, diğer durumda sıralı kuyrukla başla.
+    let queue_index=if local_prefix.is_some() {"idx_preview_asset"} else {"idx_preview_ready"};
     let sql = format!("UPDATE preview_jobs SET status='processing' WHERE id=(
-        SELECT p.id FROM preview_jobs p JOIN assets a ON a.id=p.asset_id
-        WHERE p.status IN ('queued','pending') AND {predicate}
+        SELECT p.id FROM preview_jobs p INDEXED BY {queue_index} JOIN assets a ON a.id=p.asset_id
+        WHERE p.status IN ('queued','pending') AND {predicate} {local_clause}
         AND NOT EXISTS (SELECT 1 FROM preview_jobs active WHERE active.asset_id=p.asset_id AND active.status='processing')
         ORDER BY p.priority DESC,p.created_at,p.id LIMIT 1)
         AND status IN ('queued','pending') RETURNING id,asset_id,
@@ -383,7 +393,9 @@ async fn claim_job(pool: &sqlx::SqlitePool, native: bool) -> Result<Option<Claim
         (SELECT extension FROM assets WHERE assets.id=preview_jobs.asset_id) AS extension,
         (SELECT modified_at FROM assets WHERE assets.id=preview_jobs.asset_id) AS modified_at,
         (SELECT size_bytes FROM assets WHERE assets.id=preview_jobs.asset_id) AS size_bytes");
-    Ok(sqlx::query_as(&sql).fetch_optional(pool).await?)
+    let mut query=sqlx::query_as(&sql);
+    if let Some(prefix)=local_prefix {query=query.bind(prefix).bind(format!("{}0",prefix.trim_end_matches('/')));}
+    Ok(query.fetch_optional(pool).await?)
 }
 
 async fn generate_image_thumb_async(
@@ -613,10 +625,10 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                             prepared.insert(lib.id.clone());
                         }
                     }
-                    if lib.preview_retry_at.load(std::sync::atomic::Ordering::Relaxed) > chrono::Utc::now().timestamp_millis() {
-                        continue;
-                    }
-                    let job = match claim_job(&lib.pool, native).await {
+                    let paused=lib.preview_retry_at.load(std::sync::atomic::Ordering::Relaxed) > chrono::Utc::now().timestamp_millis();
+                    let local_prefix=format!("{}/",lib.catalog_dir.to_string_lossy().replace('\\',"/"));
+                    let claimed=if paused {claim_ready_job(&lib.pool,native,Some(&local_prefix)).await} else {claim_job(&lib.pool,native).await};
+                    let job = match claimed {
                         Ok(Some(job)) => job,
                         Ok(None) => continue,
                         Err(error) => {
@@ -626,7 +638,14 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                     };
                     last_library = Some(lib.id.clone());
                     processed = true;
-                    let source = PathBuf::from(resolve_path(&lib.root_path, &job.file_path));
+                    let original=PathBuf::from(resolve_path(&lib.root_path, &job.file_path));
+                    let cached=crate::workflow::cached_source(&lib,&job.asset_id,job.size_bytes,job.modified_at).await.unwrap_or_else(|error| {tracing::warn!("Cached preview source unavailable: {error}");None});
+                    let source=cached.unwrap_or(original);
+                    let local=crate::storage::path_is_within(&source,&lib.catalog_dir);
+                    if paused && !local {
+                        let _=sqlx::query("UPDATE preview_jobs SET status='queued',error_message='Local copy unavailable' WHERE id=? AND status='processing'").bind(&job.id).execute(&lib.pool).await;
+                        break;
+                    }
                     let output = output_dir(&lib, &job);
                     let started = std::time::Instant::now();
                     if !source_available(source.clone(), lib.root_path.clone(), probe_slots.clone()).await {
@@ -634,7 +653,7 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                         let _ = state.app_handle.emit("library:activity", json!({"libraryId":lib.id}));
                         break;
                     }
-                    lib.preview_retry_at.store(0, std::sync::atomic::Ordering::Relaxed);
+                    if !local {lib.preview_retry_at.store(0, std::sync::atomic::Ordering::Relaxed);}
                     // Büyük HDR ortam haritalarında önce Windows'un küçük resim yolunu kullan.
                     let hdr_shell = if native && cfg!(windows) && matches!(job.extension.to_ascii_lowercase().as_str(), "hdr" | "exr") {
                         run_shell(&source, &output).await.ok()
@@ -796,6 +815,19 @@ mod image_tests {
 #[cfg(test)]
 mod queue_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn paused_library_claims_local_copies_and_exports_without_claiming_nas_or_stale_copies() {
+        let pool=pool().await;
+        sqlx::query("CREATE TABLE offline_assets(asset_id TEXT PRIMARY KEY,file_name TEXT,size_bytes INTEGER,modified_at INTEGER)").execute(&pool).await.unwrap();
+        for id in ["nas","cached","stale","export","outside"] {asset(&pool,id,"jpg").await;job(&pool,&format!("{id}-job"),id,"queued",if id=="nas" {10000} else {0}).await;}
+        sqlx::query("INSERT INTO offline_assets VALUES('cached','copy.jpg',12,1),('stale','copy.jpg',13,1); UPDATE assets SET file_path='C:/local-catalog/exports/render.jpg' WHERE id='export'; UPDATE assets SET file_path='C:/local-catalog-other/render.jpg' WHERE id='outside';").execute(&pool).await.unwrap();
+        assert_eq!(claim_ready_job(&pool,true,Some("C:/local-catalog/")).await.unwrap().unwrap().asset_id,"cached");
+        assert_eq!(claim_ready_job(&pool,true,Some("C:/local-catalog/")).await.unwrap().unwrap().asset_id,"export");
+        assert!(claim_ready_job(&pool,true,Some("C:/local-catalog/")).await.unwrap().is_none());
+        assert_eq!(sqlx::query_scalar::<_,String>("SELECT status FROM preview_jobs WHERE asset_id='nas'").fetch_one(&pool).await.unwrap(),"queued");
+        pool.close().await;
+    }
 
     #[tokio::test]
     async fn offline_job_remains_pending_and_cached_image_survives() {

@@ -3,6 +3,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { catalogFiles, prepareTurkishCatalog } from '../integrations/craft-editors/localization.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const integration = resolve(root, 'integrations/photocraft');
@@ -12,6 +13,7 @@ const output = resolve(root, 'apps/desktop/public/photocraft');
 const stamp = resolve(output, 'upstream.json');
 const fingerprint = createHash('sha256').update(JSON.stringify(pin))
   .update(readFileSync(resolve(integration, 'host.rs'))).update(readFileSync(resolve(integration, 'bridge.js')))
+  .update(Buffer.concat(catalogFiles.map(path => readFileSync(path))))
   .update(readFileSync(fileURLToPath(import.meta.url))).digest('hex');
 const manifest = JSON.stringify({ ...pin, fingerprint });
 const writeChanged = (path, text) => {
@@ -43,7 +45,7 @@ let web = upstream('apps/photocraft-web/src/web.rs');
 web = replace(web, 'type Inbox =', '#[path = "lumiadam_host.rs"]\nmod lumiadam_host;\n\ntype Inbox =');
 web = replace(web, 'let served: Served = Arc::default();', 'lumiadam_host::install(inbox.clone(), cc.egui_ctx.clone());\n                    let served: Served = Arc::default();');
 web = replace(web, 'download(path, bytes)', 'lumiadam_host::write(path, bytes)');
-web = replace(web, 'let mut app = PhotocraftApp::new(session, services(inbox.clone()));', 'let mut app = PhotocraftApp::new(session, services(inbox.clone()));\n                    app.session.edit_prefs(|prefs| prefs.interface.language = "en".into());');
+web = replace(web, 'let mut app = PhotocraftApp::new(session, services(inbox.clone()));', 'let mut app = PhotocraftApp::new(session, services(inbox.clone()));\n                    app.session.edit_prefs(|prefs| prefs.interface.language = lumiadam_host::language());');
 web = replaceSection(web, '/// Everything File', 'const CANVAS_ID', '');
 web = replaceSection(web, '        let dropped = ctx.input_mut', '        self.serve_fonts(ctx);',
   '        if ctx.input_mut(|i| !std::mem::take(&mut i.raw.dropped_files).is_empty()) { lumiadam_host::open_notice(); }\n');
@@ -52,6 +54,9 @@ web = replaceSection(web, '            // The browser\'s file picker', '        
 web = replaceSection(web, '/// Trigger a browser download', '/// Rust bindings to the browser', '');
 writeChanged(resolve(source, 'apps/photocraft-web/src/web.rs'), web);
 writeChanged(resolve(source, 'apps/photocraft-web/src/lumiadam_host.rs'), readFileSync(resolve(integration, 'host.rs'), 'utf8'));
+web = replace(web, '        self.serve_fonts(ctx);', '        let language = lumiadam_host::language();\n        if self.app.session.prefs().interface.language != language {\n            self.app.session.edit_prefs(|prefs| prefs.interface.language = language);\n        }\n        self.serve_fonts(ctx);');
+writeChanged(resolve(source, 'apps/photocraft-web/src/web.rs'), web);
+prepareTurkishCatalog({ name: 'photocraft', source, upstream, writeChanged });
 let html = upstream('apps/photocraft-web/index.html');
 html = html.replace(' data-cargo-features="heif"', '').replace(' data-wasm-opt="z"', '');
 html = replace(html, '</head>', '<script src="bridge.js"></script>\n<link data-trunk rel="copy-file" href="bridge.js">\n</head>');

@@ -4,4 +4,6 @@ pub mod collection;
 pub mod library;
 pub mod preview;
 pub mod shell;
+pub mod workflow;
+pub mod max_bridge;
 pub mod tag;

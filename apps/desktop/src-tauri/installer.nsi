@@ -75,9 +75,90 @@ Var UpdateMode
 Var NoShortcutMode
 Var WixMode
 Var OldMainBinaryName
+Var InstallMaxPlugin
+Var MaxPluginCheckbox
+Var MaxPluginDialog
+Var InstallLocalAI
+Var LocalAIConfirmed
+Var LocalAICheckbox
+Var LocalAIDialog
+Var LocalAIResult
+Var SetupDialog
+Var SetupTitleFont
+Var SetupHeadingFont
+Var SetupBodyFont
+Var SetupIcon
+Var AIExpanded
+Var MaxExpanded
+Var AIDetails
+Var MaxDetails
+Var AIToggle
+Var MaxToggle
+Var AIProvider
+Var AIProviderControl
+Var AIMode
+Var AIModeControl
+Var AIHint
+Var MaxAutoLoad
+Var MaxAutomaticControl
+Var MaxManualControl
+Var InstallLanguage
+Var LanguageConfirmed
+Var AICard
+Var MaxCard
+Var AISummary
+Var MaxSummary
+
+; Aynı tipografi ve renkler standart sayfalarda da kullanılır; ek bir UI bağımlılığı yoktur.
+SetFont "Segoe UI" 10
+!define MUI_BGCOLOR "171B22"
+!define MUI_TEXTCOLOR "EDF2F7"
+!define MUI_INSTFILESPAGE_COLORS "AAB8C9 171B22"
+!define MUI_CUSTOMFUNCTION_GUIINIT LumiaSetupThemeInit
+!define MUI_CUSTOMFUNCTION_UNGUIINIT un.LumiaSetupThemeInit
+
+; Her kontrol kendi erişilebilir Windows davranışını ve klavye odağını korur.
+!macro LumiaThemeFunctions PREFIX
+Function ${PREFIX}LumiaSetupThemeInit
+  CreateFont $SetupTitleFont "Segoe UI" 22 600
+  CreateFont $SetupHeadingFont "Segoe UI" 11 600
+  CreateFont $SetupBodyFont "Segoe UI" 10 400
+  System::Call 'dwmapi::DwmSetWindowAttribute(p $HWNDPARENT, i 20, *i 1, i 4)'
+  Call ${PREFIX}LumiaThemePage
+FunctionEnd
+Function ${PREFIX}LumiaThemePage
+  Push $0
+  StrCpy $0 $HWNDPARENT
+  Call ${PREFIX}LumiaThemeChildren
+  SendMessage $mui.Header.Text ${WM_SETFONT} $SetupHeadingFont 1
+  SetCtlColors $mui.Header.Text "55D8F2" "171B22"
+  Pop $0
+FunctionEnd
+Function ${PREFIX}LumiaThemeChildren
+  Push $1
+  Push $2
+  SetCtlColors $0 "EDF2F7" "171B22"
+  System::Call 'user32::GetWindow(p r0, i 5) p.r1'
+  ${While} $1 <> 0
+    System::Call 'user32::GetClassNameW(p r1, w .r2, i ${NSIS_MAX_STRLEN})'
+    ${If} $2 == "Button"
+      System::Call 'uxtheme::SetWindowTheme(p r1, w "", w "")'
+    ${EndIf}
+    Push $0
+    StrCpy $0 $1
+    Call ${PREFIX}LumiaThemeChildren
+    Pop $0
+    System::Call 'user32::GetWindow(p r1, i 2) p.r1'
+  ${EndWhile}
+  Pop $2
+  Pop $1
+FunctionEnd
+!macroend
+!insertmacro LumiaThemeFunctions ""
+!insertmacro LumiaThemeFunctions "un."
 
 Name "${PRODUCTNAME}"
-BrandingText "${COPYRIGHT}"
+BrandingText "$(lumiaBranding)"
 OutFile "${OUTFILE}"
 
 ; We don't actually use this value as default install path,
@@ -163,15 +244,51 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 !define MUI_LANGDLL_REGISTRY_ROOT "HKCU"
 !define MUI_LANGDLL_REGISTRY_KEY "${MANUPRODUCTKEY}"
 !define MUI_LANGDLL_REGISTRY_VALUENAME "Installer Language"
+!define MUI_LANGDLL_ALWAYSSHOW
+!define MUI_LANGDLL_WINDOWTITLE "LumiaDAM / Language / Dil"
+!define MUI_LANGDLL_INFO "Choose your language. / Dilinizi seçin."
 
 ; Installer pages, must be ordered as they appear
 ; 1. Welcome Page
-!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
-!insertmacro MUI_PAGE_WELCOME
+Page custom PageLumiaWelcome
+Function PageLumiaWelcome
+  Call SkipIfPassive
+  !insertmacro MUI_HEADER_TEXT "$(lumiaWelcomeTitle)" "$(lumiaWelcomeSubtitle)"
+  nsDialogs::Create 1018
+  Pop $SetupDialog
+  ${NSD_CreateIcon} 0u 3u 32u 32u ""
+  Pop $0
+  ${NSD_SetIconFromInstaller} $0 $SetupIcon
+  ${NSD_CreateLabel} 43u 0u 250u 30u "LumiaDAM"
+  Pop $0
+  SendMessage $0 ${WM_SETFONT} $SetupTitleFont 0
+  ${NSD_CreateLabel} 43u 32u 250u 24u "$(lumiaWelcomeTagline)"
+  Pop $0
+  ${NSD_CreateLabel} 0u 67u 98u 13u "$(lumiaOrganize)"
+  Pop $0
+  SendMessage $0 ${WM_SETFONT} $SetupHeadingFont 0
+  ${NSD_CreateLabel} 104u 67u 98u 13u "$(lumiaCreate)"
+  Pop $0
+  SendMessage $0 ${WM_SETFONT} $SetupHeadingFont 0
+  ${NSD_CreateLabel} 208u 67u 92u 13u "$(lumiaConnect)"
+  Pop $0
+  SendMessage $0 ${WM_SETFONT} $SetupHeadingFont 0
+  ${NSD_CreateLabel} 0u 84u 93u 37u "$(lumiaOrganizeText)"
+  Pop $0
+  ${NSD_CreateLabel} 104u 84u 93u 37u "$(lumiaCreateText)"
+  Pop $0
+  ${NSD_CreateLabel} 208u 84u 92u 37u "$(lumiaConnectText)"
+  Pop $0
+  ${NSD_CreateLabel} 0u 130u 100% 10u "$(lumiaVersion)"
+  Pop $0
+  Call LumiaThemePage
+  nsDialogs::Show
+FunctionEnd
 
 ; 2. License Page (if defined)
 !if "${LICENSE}" != ""
   !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
+  !define MUI_PAGE_CUSTOMFUNCTION_SHOW LumiaThemePage
   !insertmacro MUI_PAGE_LICENSE "${LICENSE}"
 !endif
 
@@ -236,7 +353,6 @@ Function PageReinstall
   ; Upgrading ($R0 = 1) or Reinstalling same version ($R0 = 0):
   ; Seamlessly replace older version in-place without prompting to uninstall or messing up data
   ${If} $R0 >= 0
-    nsExec::Exec 'taskkill /F /IM "${MAINBINARYNAME}.exe" /T'
     ReadRegStr $INSTDIR SHCTX "${MANUPRODUCTKEY}" ""
     ${If} $INSTDIR == ""
       ReadRegStr $INSTDIR SHCTX "${UNINSTKEY}" "InstallLocation"
@@ -387,7 +503,39 @@ FunctionEnd
 
 ; 5. Choose install directory page
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW LumiaThemePage
 !insertmacro MUI_PAGE_DIRECTORY
+
+Function InstallSelectedMaxPlugin
+  SetShellVarContext current
+  WriteRegDWORD HKCU "${MANUPRODUCTKEY}" "MaxPluginRequested" $InstallMaxPlugin
+  WriteRegDWORD HKCU "${MANUPRODUCTKEY}" "MaxPluginAutoLoad" $MaxAutoLoad
+  ${If} $InstallMaxPlugin == ${BST_CHECKED}
+  ${AndIf} $MaxAutoLoad == 1
+    ClearErrors
+    CreateDirectory "$APPDATA\Autodesk\ApplicationPlugins\LumiaDAM.bundle\Contents"
+    CopyFiles /SILENT "$INSTDIR\plugins\3dsmax\LumiaDAM.bundle\PackageContents.xml" "$APPDATA\Autodesk\ApplicationPlugins\LumiaDAM.bundle"
+    CopyFiles /SILENT "$INSTDIR\plugins\3dsmax\LumiaDAM.bundle\Contents\startup.ms" "$APPDATA\Autodesk\ApplicationPlugins\LumiaDAM.bundle\Contents"
+    CopyFiles /SILENT "$INSTDIR\plugins\3dsmax\LumiaDAM.bundle\Contents\lumiadam_max.py" "$APPDATA\Autodesk\ApplicationPlugins\LumiaDAM.bundle\Contents"
+    ${If} ${Errors}
+      MessageBox MB_ICONSTOP "$(lumiaMaxInstallError)"
+      Abort
+    ${EndIf}
+    WriteRegDWORD HKCU "${MANUPRODUCTKEY}" "MaxPluginInstalled" 1
+  ${Else}
+    ReadRegDWORD $0 HKCU "${MANUPRODUCTKEY}" "MaxPluginInstalled"
+    ${If} $0 == 1
+      ; Yalnız LumiaDAM'in kurduğu dosyalar kaldırılır; diğer eklentilere dokunulmaz.
+      Delete "$APPDATA\Autodesk\ApplicationPlugins\LumiaDAM.bundle\Contents\startup.ms"
+      Delete "$APPDATA\Autodesk\ApplicationPlugins\LumiaDAM.bundle\Contents\lumiadam_max.py"
+      Delete "$APPDATA\Autodesk\ApplicationPlugins\LumiaDAM.bundle\PackageContents.xml"
+      RMDir "$APPDATA\Autodesk\ApplicationPlugins\LumiaDAM.bundle\Contents"
+      RMDir "$APPDATA\Autodesk\ApplicationPlugins\LumiaDAM.bundle"
+    ${EndIf}
+    WriteRegDWORD HKCU "${MANUPRODUCTKEY}" "MaxPluginInstalled" 0
+  ${EndIf}
+  !insertmacro SetContext
+FunctionEnd
 
 ; 6. Start menu shortcut page
 Var AppStartMenuFolder
@@ -397,9 +545,250 @@ Var AppStartMenuFolder
 !else
   !define MUI_PAGE_CUSTOMFUNCTION_PRE Skip
 !endif
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW LumiaThemePage
 !insertmacro MUI_PAGE_STARTMENU Application $AppStartMenuFolder
 
+; Temel kurulumdan sonra tek seçim ekranı; ayrıntılar yalnız seçilen bileşenler için açılır.
+Page custom PageOptionalComponents PageLeaveOptionalComponents
+Page custom PageLocalAI PageLeaveLocalAI
+Page custom PageMaxPlugin PageLeaveMaxPlugin
+
+Function PageOptionalComponents
+  Call SkipIfPassive
+  !insertmacro MUI_HEADER_TEXT "$(lumiaComponentsTitle)" "$(lumiaComponentsSubtitle)"
+  nsDialogs::Create 1018
+  Pop $SetupDialog
+  ${If} $SetupDialog == error
+    Abort
+  ${EndIf}
+  ${NSD_CreateLabel} 0u 0u 145u 132u ""
+  Pop $AICard
+  ${NSD_CreateLabel} 153u 0u 145u 132u ""
+  Pop $MaxCard
+  ${NSD_CreateCheckbox} 9u 9u 126u 17u "$(lumiaLocalAI)"
+  Pop $LocalAICheckbox
+  ${NSD_SetState} $LocalAICheckbox $InstallLocalAI
+  SendMessage $LocalAICheckbox ${WM_SETFONT} $SetupHeadingFont 0
+  ${NSD_CreateLabel} 9u 33u 126u 29u "$(lumiaAISummary)"
+  Pop $AISummary
+  ${NSD_CreateButton} 9u 65u 126u 17u "$(lumiaDetailsMore)"
+  Pop $AIToggle
+  ${NSD_OnClick} $AIToggle ToggleAIDetails
+  nsDialogs::CreateControl EDIT ${DEFAULT_STYLES}|${WS_TABSTOP}|${WS_VSCROLL}|${ES_MULTILINE}|${ES_READONLY} ${WS_EX_CLIENTEDGE} 9u 87u 126u 38u "$(lumiaAIDescription)"
+  Pop $AIDetails
+  ${NSD_CreateCheckbox} 162u 9u 126u 17u "$(lumiaMaxPlugin)"
+  Pop $MaxPluginCheckbox
+  ${NSD_SetState} $MaxPluginCheckbox $InstallMaxPlugin
+  SendMessage $MaxPluginCheckbox ${WM_SETFONT} $SetupHeadingFont 0
+  ${NSD_CreateLabel} 162u 33u 126u 29u "$(lumiaMaxSummary)"
+  Pop $MaxSummary
+  ${NSD_CreateButton} 162u 65u 126u 17u "$(lumiaDetailsMore)"
+  Pop $MaxToggle
+  ${NSD_OnClick} $MaxToggle ToggleMaxDetails
+  nsDialogs::CreateControl EDIT ${DEFAULT_STYLES}|${WS_TABSTOP}|${WS_VSCROLL}|${ES_MULTILINE}|${ES_READONLY} ${WS_EX_CLIENTEDGE} 162u 87u 126u 38u "$(lumiaMaxDescription)"
+  Pop $MaxDetails
+  Call LumiaThemePage
+  SetCtlColors $AICard "EDF2F7" "232A35"
+  SetCtlColors $MaxCard "EDF2F7" "232A35"
+  SetCtlColors $AISummary "EDF2F7" "232A35"
+  SetCtlColors $MaxSummary "EDF2F7" "232A35"
+  SetCtlColors $AIDetails "EDF2F7" "232A35"
+  SetCtlColors $MaxDetails "EDF2F7" "232A35"
+  SetCtlColors $LocalAICheckbox "55D8F2" "232A35"
+  SetCtlColors $MaxPluginCheckbox "55D8F2" "232A35"
+  Call UpdateComponentDetails
+  nsDialogs::Show
+FunctionEnd
+
+Function ToggleAIDetails
+  Pop $0
+  IntOp $AIExpanded $AIExpanded ^ 1
+  Call UpdateComponentDetails
+FunctionEnd
+Function ToggleMaxDetails
+  Pop $0
+  IntOp $MaxExpanded $MaxExpanded ^ 1
+  Call UpdateComponentDetails
+FunctionEnd
+Function UpdateComponentDetails
+  ${If} $AIExpanded == 1
+    ShowWindow $AIDetails ${SW_SHOW}
+    ${NSD_SetText} $AIToggle "$(lumiaDetailsLess)"
+  ${Else}
+    ShowWindow $AIDetails ${SW_HIDE}
+    ${NSD_SetText} $AIToggle "$(lumiaDetailsMore)"
+  ${EndIf}
+  ${If} $MaxExpanded == 1
+    ShowWindow $MaxDetails ${SW_SHOW}
+    ${NSD_SetText} $MaxToggle "$(lumiaDetailsLess)"
+  ${Else}
+    ShowWindow $MaxDetails ${SW_HIDE}
+    ${NSD_SetText} $MaxToggle "$(lumiaDetailsMore)"
+  ${EndIf}
+FunctionEnd
+Function PageLeaveOptionalComponents
+  ${NSD_GetState} $LocalAICheckbox $InstallLocalAI
+  ${NSD_GetState} $MaxPluginCheckbox $InstallMaxPlugin
+  ; Geri dönüşte kaldırılan seçim eski bir indirme onayını kullanamaz.
+  StrCpy $LocalAIConfirmed 0
+FunctionEnd
+
+Function PageLocalAI
+  Call SkipIfPassive
+  ${If} $InstallLocalAI <> ${BST_CHECKED}
+    Abort
+  ${EndIf}
+  !insertmacro MUI_HEADER_TEXT "$(lumiaAITitle)" "$(lumiaAISubtitle)"
+  nsDialogs::Create 1018
+  Pop $LocalAIDialog
+  ${If} $LocalAIDialog == error
+    Abort
+  ${EndIf}
+  ${NSD_CreateLabel} 0u 0u 100% 13u "$(lumiaAIEngineQuestion)"
+  Pop $0
+  ${NSD_CreateDropList} 0u 17u 100% 65u ""
+  Pop $AIProviderControl
+  ${NSD_CB_AddString} $AIProviderControl "$(lumiaAIPrivate)"
+  ${NSD_CB_AddString} $AIProviderControl "$(lumiaAIExistingOllama)"
+  ${NSD_CB_AddString} $AIProviderControl "$(lumiaAIExistingLMStudio)"
+  ${NSD_CB_AddString} $AIProviderControl "$(lumiaAIKeepEngine)"
+  SendMessage $AIProviderControl ${CB_SETCURSEL} $AIProvider 0
+  ${NSD_OnChange} $AIProviderControl UpdateAIHint
+  ${NSD_CreateLabel} 0u 40u 100% 30u ""
+  Pop $AIHint
+  ${NSD_CreateLabel} 0u 75u 100% 13u "$(lumiaAIModeQuestion)"
+  Pop $0
+  ${NSD_CreateDropList} 0u 92u 100% 55u ""
+  Pop $AIModeControl
+  ${NSD_CB_AddString} $AIModeControl "$(lumiaAIDisabled)"
+  ${NSD_CB_AddString} $AIModeControl "$(lumiaAIManual)"
+  ${NSD_CB_AddString} $AIModeControl "$(lumiaAIKeepSchedule)"
+  SendMessage $AIModeControl ${CB_SETCURSEL} $AIMode 0
+  ${NSD_CreateLabel} 0u 116u 100% 24u "$(lumiaAINoModel)"
+  Pop $0
+  Call LumiaThemePage
+  Push 0
+  Call UpdateAIHint
+  nsDialogs::Show
+FunctionEnd
+Function UpdateAIHint
+  Pop $0
+  SendMessage $AIProviderControl ${CB_GETCURSEL} 0 0 $0
+  ${If} $0 == 0
+    ${NSD_SetText} $AIHint "$(lumiaAIDownloadHint)"
+  ${ElseIf} $0 == 3
+    ${NSD_SetText} $AIHint "$(lumiaAIKeepHint)"
+  ${Else}
+    ${NSD_SetText} $AIHint "$(lumiaAIExistingHint)"
+  ${EndIf}
+FunctionEnd
+Function PageLeaveLocalAI
+  SendMessage $AIProviderControl ${CB_GETCURSEL} 0 0 $AIProvider
+  SendMessage $AIModeControl ${CB_GETCURSEL} 0 0 $AIMode
+  StrCpy $LocalAIConfirmed 1
+FunctionEnd
+
+Function PageMaxPlugin
+  Call SkipIfPassive
+  ${If} $InstallMaxPlugin <> ${BST_CHECKED}
+    Abort
+  ${EndIf}
+  !insertmacro MUI_HEADER_TEXT "$(lumiaMaxTitle)" "$(lumiaMaxSubtitle)"
+  nsDialogs::Create 1018
+  Pop $MaxPluginDialog
+  ${If} $MaxPluginDialog == error
+    Abort
+  ${EndIf}
+  ${NSD_CreateLabel} 0u 0u 100% 14u "$(lumiaMaxQuestion)"
+  Pop $0
+  ${NSD_CreateRadioButton} 0u 22u 100% 17u "$(lumiaMaxAutomatic)"
+  Pop $MaxAutomaticControl
+  ${NSD_CreateLabel} 12u 43u 286u 23u "$(lumiaMaxAutomaticHint)"
+  Pop $0
+  ${NSD_CreateRadioButton} 0u 73u 100% 17u "$(lumiaMaxManual)"
+  Pop $MaxManualControl
+  ${NSD_CreateLabel} 12u 94u 286u 27u "$(lumiaMaxManualHint)"
+  Pop $0
+  ${If} $MaxAutoLoad == 1
+    ${NSD_Check} $MaxAutomaticControl
+  ${Else}
+    ${NSD_Check} $MaxManualControl
+  ${EndIf}
+  ${NSD_CreateLabel} 0u 128u 100% 12u "$(lumiaMaxRenderHint)"
+  Pop $0
+  Call LumiaThemePage
+  nsDialogs::Show
+FunctionEnd
+Function PageLeaveMaxPlugin
+  ${NSD_GetState} $MaxAutomaticControl $MaxAutoLoad
+FunctionEnd
+
+Function InstallSelectedLocalAI
+  ${If} ${Silent}
+  ${OrIf} $PassiveMode == 1
+    ; Etkileşimsiz güncelleme kayıtlı AI seçimini ve bütün dosyaları korur.
+    Return
+  ${EndIf}
+  SetShellVarContext current
+  ${If} $InstallLocalAI <> ${BST_CHECKED}
+    ; Ret seçimi AI yardımcısını veya ağı çalıştırmaz; model/ayar/runtime korunur.
+    WriteRegDWORD HKCU "${MANUPRODUCTKEY}" "LocalAIRequested" 0
+    Delete "$LOCALAPPDATA\LumiaDAM\local-ai\install-requested.json"
+  ${ElseIf} $LocalAIConfirmed == 1
+    local_ai_retry:
+    StrCpy $0 "keep"
+    StrCpy $1 "keep"
+    StrCpy $2 "-ConfigureOnly"
+    ${If} $AIProvider == 0
+      StrCpy $0 "bundled"
+      StrCpy $2 ""
+      DetailPrint "$(lumiaAIDownloadProgress)"
+    ${ElseIf} $AIProvider == 1
+      StrCpy $0 "ollama"
+    ${ElseIf} $AIProvider == 2
+      StrCpy $0 "lmstudio"
+    ${EndIf}
+    ${If} $AIMode == 0
+      StrCpy $1 "disabled"
+    ${ElseIf} $AIMode == 1
+      StrCpy $1 "manual"
+    ${EndIf}
+    DetailPrint "$(lumiaAISaving)"
+    ; Yalnız paketin içerdiği sabit script çalışır; uzaktan script veya Setup.exe yürütülmez.
+    nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\integrations\local-ai\install-runtime.ps1" -Provider $0 -Mode $1 -Language $InstallLanguage $2'
+    Pop $LocalAIResult
+    ${If} $LocalAIResult == 0
+      WriteRegDWORD HKCU "${MANUPRODUCTKEY}" "LocalAIRequested" 1
+      DetailPrint "$(lumiaAISaved)"
+    ${Else}
+      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(lumiaAIError)" /SD IDCANCEL IDRETRY local_ai_retry
+      StrCpy $InstallLocalAI 0
+      WriteRegDWORD HKCU "${MANUPRODUCTKEY}" "LocalAIRequested" 0
+      Delete "$LOCALAPPDATA\LumiaDAM\local-ai\install-requested.json"
+      DetailPrint "$(lumiaAIContinue)"
+    ${EndIf}
+  ${EndIf}
+  ; Sessiz/pasif güncelleme saklanan tercihi korur; eksik runtime için indirme başlatmaz.
+  !insertmacro SetContext
+FunctionEnd
+
+Function SaveInstallerLanguage
+  ${If} $LanguageConfirmed != 1
+    Return
+  ${EndIf}
+  language_retry:
+  DetailPrint "$(lumiaLanguageSaving)"
+  ; Dil, AI seçilmese de kaydedilir; bu yol runtime/model dizinine dokunmaz.
+  nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\integrations\local-ai\install-runtime.ps1" -LanguageOnly -Language $InstallLanguage'
+  Pop $LocalAIResult
+  ${If} $LocalAIResult != 0
+    MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(lumiaLanguageError)" /SD IDCANCEL IDRETRY language_retry
+    Abort
+  ${EndIf}
+FunctionEnd
+
 ; 7. Installation page
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW LumiaThemePage
 !insertmacro MUI_PAGE_INSTFILES
 
 ; 8. Finish page
@@ -415,6 +804,9 @@ Var AppStartMenuFolder
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_FUNCTION RunMainBinary
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW LumiaThemePage
+!define MUI_FINISHPAGE_TITLE "$(lumiaFinishTitle)"
+!define MUI_FINISHPAGE_TEXT "$(lumiaFinishText)"
 !insertmacro MUI_PAGE_FINISH
 
 Function RunMainBinary
@@ -424,9 +816,11 @@ FunctionEnd
 ; Uninstaller Pages
 ; 1. Confirm uninstall page (No delete app data checkbox to protect library databases)
 !define MUI_PAGE_CUSTOMFUNCTION_PRE un.SkipIfPassive
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW un.LumiaThemePage
 !insertmacro MUI_UNPAGE_CONFIRM
 
 ; 2. Uninstalling Page
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW un.LumiaThemePage
 !insertmacro MUI_UNPAGE_INSTFILES
 
 ;Languages
@@ -434,11 +828,195 @@ FunctionEnd
 !insertmacro MUI_LANGUAGE "{{this}}"
 {{/each}}
 !insertmacro MUI_RESERVEFILE_LANGDLL
-{{#each language_files}}
-  !include "{{this}}"
-{{/each}}
+; Tauri yardımcılarının metinleri de kurulum diliyle birlikte değişir.
+LangString addOrReinstall ${LANG_ENGLISH} "Add/Reinstall components"
+LangString addOrReinstall ${LANG_TURKISH} "Bileşen ekle / yeniden kur"
+LangString alreadyInstalled ${LANG_ENGLISH} "Already installed"
+LangString alreadyInstalled ${LANG_TURKISH} "Zaten kurulu"
+LangString alreadyInstalledLong ${LANG_ENGLISH} "${PRODUCTNAME} ${VERSION} is already installed. Choose an operation and click Next."
+LangString alreadyInstalledLong ${LANG_TURKISH} "${PRODUCTNAME} ${VERSION} zaten kurulu. Bir işlem seçip İleri düğmesine tıklayın."
+LangString appRunning ${LANG_ENGLISH} "${PRODUCTNAME} is running. Close it and try again."
+LangString appRunning ${LANG_TURKISH} "${PRODUCTNAME} çalışıyor. Uygulamayı kapatıp yeniden deneyin."
+LangString appRunningOkKill ${LANG_ENGLISH} "${PRODUCTNAME} is running.$\nClick OK to close it."
+LangString appRunningOkKill ${LANG_TURKISH} "${PRODUCTNAME} çalışıyor.$\nKapatmak için Tamam düğmesine tıklayın."
+LangString chooseMaintenanceOption ${LANG_ENGLISH} "Choose a maintenance operation."
+LangString chooseMaintenanceOption ${LANG_TURKISH} "Bir bakım işlemi seçin."
+LangString choowHowToInstall ${LANG_ENGLISH} "Choose how to install ${PRODUCTNAME}."
+LangString choowHowToInstall ${LANG_TURKISH} "${PRODUCTNAME} uygulamasının nasıl kurulacağını seçin."
+LangString createDesktop ${LANG_ENGLISH} "Create desktop shortcut"
+LangString createDesktop ${LANG_TURKISH} "Masaüstü kısayolu oluştur"
+LangString dontUninstall ${LANG_ENGLISH} "Do not uninstall"
+LangString dontUninstall ${LANG_TURKISH} "Mevcut kurulumu kaldırma"
+LangString dontUninstallDowngrade ${LANG_ENGLISH} "Do not uninstall (downgrading without uninstalling is disabled)"
+LangString dontUninstallDowngrade ${LANG_TURKISH} "Kaldırma (kaldırmadan eski sürüme geçiş devre dışı)"
+LangString failedToKillApp ${LANG_ENGLISH} "${PRODUCTNAME} could not be closed. Close it and try again."
+LangString failedToKillApp ${LANG_TURKISH} "${PRODUCTNAME} kapatılamadı. Uygulamayı kapatıp yeniden deneyin."
+LangString installingWebview2 ${LANG_ENGLISH} "Installing WebView2..."
+LangString installingWebview2 ${LANG_TURKISH} "WebView2 kuruluyor..."
+LangString newerVersionInstalled ${LANG_ENGLISH} "A newer version of ${PRODUCTNAME} is installed. To install this older version, choose an operation and click Next."
+LangString newerVersionInstalled ${LANG_TURKISH} "${PRODUCTNAME} uygulamasının daha yeni bir sürümü kurulu. Bu eski sürümü kurmak için bir işlem seçip İleri düğmesine tıklayın."
+LangString older ${LANG_ENGLISH} "older"
+LangString older ${LANG_TURKISH} "eski"
+LangString olderOrUnknownVersionInstalled ${LANG_ENGLISH} "An $R4 version of ${PRODUCTNAME} is installed. Choose an operation and click Next."
+LangString olderOrUnknownVersionInstalled ${LANG_TURKISH} "${PRODUCTNAME} uygulamasının $R4 bir sürümü kurulu. Bir işlem seçip İleri düğmesine tıklayın."
+LangString silentDowngrades ${LANG_ENGLISH} "Silent downgrades are disabled. Run the installer with its graphical interface.$\n"
+LangString silentDowngrades ${LANG_TURKISH} "Sessiz kurulumda eski sürüme geçilemez. Kurulumu grafik arayüzüyle çalıştırın.$\n"
+LangString unableToUninstall ${LANG_ENGLISH} "The previous installation could not be removed."
+LangString unableToUninstall ${LANG_TURKISH} "Önceki kurulum kaldırılamadı."
+LangString uninstallApp ${LANG_ENGLISH} "Uninstall ${PRODUCTNAME}"
+LangString uninstallApp ${LANG_TURKISH} "${PRODUCTNAME} uygulamasını kaldır"
+LangString uninstallBeforeInstalling ${LANG_ENGLISH} "Uninstall before installing"
+LangString uninstallBeforeInstalling ${LANG_TURKISH} "Kurulumdan önce mevcut sürümü kaldır"
+LangString unknown ${LANG_ENGLISH} "unknown"
+LangString unknown ${LANG_TURKISH} "bilinmeyen"
+LangString webview2AbortError ${LANG_ENGLISH} "WebView2 could not be installed. The application requires it. Try running setup again."
+LangString webview2AbortError ${LANG_TURKISH} "WebView2 kurulamadı. Uygulamanın çalışması için gereklidir. Kurulumu yeniden çalıştırın."
+LangString webview2DownloadError ${LANG_ENGLISH} "WebView2 download failed: $0"
+LangString webview2DownloadError ${LANG_TURKISH} "WebView2 indirilemedi: $0"
+LangString webview2DownloadSuccess ${LANG_ENGLISH} "WebView2 installer downloaded."
+LangString webview2DownloadSuccess ${LANG_TURKISH} "WebView2 kurulum dosyası indirildi."
+LangString webview2Downloading ${LANG_ENGLISH} "Downloading WebView2 installer..."
+LangString webview2Downloading ${LANG_TURKISH} "WebView2 kurulum dosyası indiriliyor..."
+LangString webview2InstallError ${LANG_ENGLISH} "WebView2 installation failed with exit code $1."
+LangString webview2InstallError ${LANG_TURKISH} "WebView2 kurulumu $1 hata koduyla başarısız oldu."
+LangString webview2InstallSuccess ${LANG_ENGLISH} "WebView2 installed."
+LangString webview2InstallSuccess ${LANG_TURKISH} "WebView2 kuruldu."
+LangString deleteAppData ${LANG_ENGLISH} "Delete application data"
+LangString deleteAppData ${LANG_TURKISH} "Uygulama verilerini sil"
+
+; Özel kurulum metinleri; standart sayfalar NSIS dil paketlerinden gelir.
+LangString lumiaBranding ${LANG_ENGLISH} "LumiaDAM  /  Creative assets, connected."
+LangString lumiaBranding ${LANG_TURKISH} "LumiaDAM  /  Yaratıcı varlıklar bir arada."
+LangString lumiaWelcomeTitle ${LANG_ENGLISH} "LumiaDAM Setup"
+LangString lumiaWelcomeTitle ${LANG_TURKISH} "LumiaDAM Kurulumu"
+LangString lumiaWelcomeSubtitle ${LANG_ENGLISH} "Your creative workspace starts here."
+LangString lumiaWelcomeSubtitle ${LANG_TURKISH} "Yaratıcı çalışma alanınız burada başlıyor."
+LangString lumiaWelcomeTagline ${LANG_ENGLISH} "A home for your creative library."
+LangString lumiaWelcomeTagline ${LANG_TURKISH} "Yaratıcı arşiviniz için bir çalışma alanı."
+LangString lumiaOrganize ${LANG_ENGLISH} "01  ORGANIZE"
+LangString lumiaOrganize ${LANG_TURKISH} "01  DÜZENLE"
+LangString lumiaCreate ${LANG_ENGLISH} "02  CREATE"
+LangString lumiaCreate ${LANG_TURKISH} "02  ÜRET"
+LangString lumiaConnect ${LANG_ENGLISH} "03  CONNECT"
+LangString lumiaConnect ${LANG_TURKISH} "03  BAĞLAN"
+LangString lumiaOrganizeText ${LANG_ENGLISH} "Find assets across your libraries."
+LangString lumiaOrganizeText ${LANG_TURKISH} "Kütüphanelerinizdeki varlıkları bulun."
+LangString lumiaCreateText ${LANG_ENGLISH} "Open previews and built-in editors."
+LangString lumiaCreateText ${LANG_TURKISH} "Önizlemeleri ve yerleşik düzenleyicileri açın."
+LangString lumiaConnectText ${LANG_ENGLISH} "Add optional AI and 3ds Max tools."
+LangString lumiaConnectText ${LANG_TURKISH} "İsteğe bağlı AI ve 3ds Max araçlarını ekleyin."
+LangString lumiaVersion ${LANG_ENGLISH} "WINDOWS 64-BIT     /     VERSION ${VERSION}"
+LangString lumiaVersion ${LANG_TURKISH} "WINDOWS 64 BİT     /     SÜRÜM ${VERSION}"
+LangString lumiaMaxInstallError ${LANG_ENGLISH} "The 3ds Max plugin could not be installed. Check access to your Autodesk ApplicationPlugins folder and run the installer again."
+LangString lumiaMaxInstallError ${LANG_TURKISH} "3ds Max eklentisi kurulamadı. Autodesk ApplicationPlugins klasörüne erişimi kontrol edip kurulumu yeniden çalıştırın."
+LangString lumiaComponentsTitle ${LANG_ENGLISH} "Customize your workspace"
+LangString lumiaComponentsTitle ${LANG_TURKISH} "Çalışma alanınızı özelleştirin"
+LangString lumiaComponentsSubtitle ${LANG_ENGLISH} "Choose your tools. Open Details to learn what each one adds."
+LangString lumiaComponentsSubtitle ${LANG_TURKISH} "Araçlarınızı seçin. Neler sunduklarını Ayrıntılar bölümünde inceleyin."
+LangString lumiaLocalAI ${LANG_ENGLISH} "Local AI"
+LangString lumiaLocalAI ${LANG_TURKISH} "Yerel AI"
+LangString lumiaAISummary ${LANG_ENGLISH} "Private suggestions for a more organized library."
+LangString lumiaAISummary ${LANG_TURKISH} "Daha düzenli bir kütüphane için yerel öneriler."
+LangString lumiaDetailsMore ${LANG_ENGLISH} "Details +"
+LangString lumiaDetailsMore ${LANG_TURKISH} "Ayrıntılar +"
+LangString lumiaDetailsLess ${LANG_ENGLISH} "Details -"
+LangString lumiaDetailsLess ${LANG_TURKISH} "Ayrıntılar -"
+LangString lumiaAIDescription ${LANG_ENGLISH} "Analyzes local previews and proposes organization changes for your approval. Choose a private Ollama runtime or your existing Ollama / LM Studio. Optional runtime download: 1.47 GB; 8 GB free space during setup. Models are chosen and downloaded later."
+LangString lumiaAIDescription ${LANG_TURKISH} "Yerel önizlemeleri analiz eder ve onayınıza sunulan düzenleme önerileri oluşturur. Özel Ollama runtime veya mevcut Ollama / LM Studio kullanılabilir. İsteğe bağlı indirme: 1,47 GB; kurulumda 8 GB boş alan gerekir. Modeller daha sonra seçilip indirilir."
+LangString lumiaMaxPlugin ${LANG_ENGLISH} "3ds Max plugin"
+LangString lumiaMaxPlugin ${LANG_TURKISH} "3ds Max eklentisi"
+LangString lumiaMaxSummary ${LANG_ENGLISH} "Bring library models into your working scene."
+LangString lumiaMaxSummary ${LANG_TURKISH} "Kütüphanedeki modelleri sahnenize aktarın."
+LangString lumiaMaxDescription ${LANG_ENGLISH} "Merge MAX models and ZIP/RAR archives, with available textures copied to your project. Supports 3ds Max 2022-2027. RAR requires WinRAR/UnRAR. Render engines are not included. Restart Max after installing the plugin."
+LangString lumiaMaxDescription ${LANG_TURKISH} "MAX modellerini ve ZIP/RAR arşivlerini sahneye ekler; bulunan dokuları projenize kopyalar. 3ds Max 2022-2027 desteklenir. RAR için WinRAR/UnRAR gerekir. Render motorları dahil değildir. Eklentiden sonra Max uygulamasını yeniden başlatın."
+LangString lumiaAITitle ${LANG_ENGLISH} "Set up Local AI"
+LangString lumiaAITitle ${LANG_TURKISH} "Yerel AI kurulumu"
+LangString lumiaAISubtitle ${LANG_ENGLISH} "Choose the engine and when it may work."
+LangString lumiaAISubtitle ${LANG_TURKISH} "Motoru ve ne zaman çalışabileceğini seçin."
+LangString lumiaAIEngineQuestion ${LANG_ENGLISH} "Which AI engine would you like to use?"
+LangString lumiaAIEngineQuestion ${LANG_TURKISH} "Hangi AI motorunu kullanmak istersiniz?"
+LangString lumiaAIPrivate ${LANG_ENGLISH} "Private Ollama runtime (download if needed)"
+LangString lumiaAIPrivate ${LANG_TURKISH} "Özel Ollama runtime (gerekirse indirilir)"
+LangString lumiaAIExistingOllama ${LANG_ENGLISH} "Use my existing Ollama"
+LangString lumiaAIExistingOllama ${LANG_TURKISH} "Mevcut Ollama kurulumumu kullan"
+LangString lumiaAIExistingLMStudio ${LANG_ENGLISH} "Use my existing LM Studio"
+LangString lumiaAIExistingLMStudio ${LANG_TURKISH} "Mevcut LM Studio kurulumumu kullan"
+LangString lumiaAIKeepEngine ${LANG_ENGLISH} "Keep my current AI engine settings"
+LangString lumiaAIKeepEngine ${LANG_TURKISH} "Mevcut AI motoru ayarlarımı koru"
+LangString lumiaAIModeQuestion ${LANG_ENGLISH} "When may Local AI run?"
+LangString lumiaAIModeQuestion ${LANG_TURKISH} "Yerel AI ne zaman çalışabilsin?"
+LangString lumiaAIDisabled ${LANG_ENGLISH} "Keep disabled until I enable it"
+LangString lumiaAIDisabled ${LANG_TURKISH} "Ben etkinleştirene kadar kapalı kalsın"
+LangString lumiaAIManual ${LANG_ENGLISH} "Only when I click Run now (manual)"
+LangString lumiaAIManual ${LANG_TURKISH} "Yalnız Şimdi çalıştır dediğimde (manuel)"
+LangString lumiaAIKeepSchedule ${LANG_ENGLISH} "Keep my current schedule"
+LangString lumiaAIKeepSchedule ${LANG_TURKISH} "Mevcut çalışma planımı koru"
+LangString lumiaAINoModel ${LANG_ENGLISH} "No model runs during setup. Configure models and idle/scheduled work in Menu > Local AI."
+LangString lumiaAINoModel ${LANG_TURKISH} "Kurulumda model çalıştırılmaz. Model ve çalışma planını Menü > Yerel AI bölümünden ayarlayın."
+LangString lumiaAIDownloadHint ${LANG_ENGLISH} "1.47 GB download if needed. Allow 8 GB free during setup; models need additional space. No Windows service or startup task is added."
+LangString lumiaAIDownloadHint ${LANG_TURKISH} "Gerekirse 1,47 GB indirilir. Kurulumda 8 GB, modeller için ek boş alan gerekir. Windows servisi veya başlangıç görevi eklenmez."
+LangString lumiaAIKeepHint ${LANG_ENGLISH} "Preserve the current engine, model and server address. No runtime download."
+LangString lumiaAIKeepHint ${LANG_TURKISH} "Mevcut motor, model ve sunucu adresi korunur. Runtime indirilmez."
+LangString lumiaAIExistingHint ${LANG_ENGLISH} "No runtime download. Start your existing local server when needed and choose its model in Menu > Local AI."
+LangString lumiaAIExistingHint ${LANG_TURKISH} "Runtime indirilmez. Yerel sunucunuzu gerektiğinde başlatın; modeli Menü > Yerel AI bölümünden seçin."
+LangString lumiaMaxTitle ${LANG_ENGLISH} "Connect to 3ds Max"
+LangString lumiaMaxTitle ${LANG_TURKISH} "3ds Max bağlantısı"
+LangString lumiaMaxSubtitle ${LANG_ENGLISH} "Choose how the plugin is installed for your Windows account."
+LangString lumiaMaxSubtitle ${LANG_TURKISH} "Windows hesabınız için eklentinin kurulum biçimini seçin."
+LangString lumiaMaxQuestion ${LANG_ENGLISH} "How would you like to set up the connection?"
+LangString lumiaMaxQuestion ${LANG_TURKISH} "Bağlantıyı nasıl kurmak istersiniz?"
+LangString lumiaMaxAutomatic ${LANG_ENGLISH} "Install and load automatically in 3ds Max"
+LangString lumiaMaxAutomatic ${LANG_TURKISH} "Kur ve 3ds Max ile otomatik yükle"
+LangString lumiaMaxAutomaticHint ${LANG_ENGLISH} "Registers the plugin for Max 2022-2027. Restart Max after setup."
+LangString lumiaMaxAutomaticHint ${LANG_TURKISH} "Eklentiyi Max 2022-2027 için kaydeder. Kurulumdan sonra Max uygulamasını yeniden başlatın."
+LangString lumiaMaxManual ${LANG_ENGLISH} "Keep plugin files for manual installation later"
+LangString lumiaMaxManual ${LANG_TURKISH} "Eklenti dosyalarını daha sonra manuel kurmak için sakla"
+LangString lumiaMaxManualHint ${LANG_ENGLISH} "Files stay in LumiaDAM's plugins folder. An existing automatic registration is removed. No other Max plugins are changed."
+LangString lumiaMaxManualHint ${LANG_TURKISH} "Dosyalar LumiaDAM plugins klasöründe tutulur. Varsa önceki otomatik kayıt kaldırılır. Diğer Max eklentileri değiştirilmez."
+LangString lumiaMaxRenderHint ${LANG_ENGLISH} "V-Ray / Corona and other render plugins are installed separately."
+LangString lumiaMaxRenderHint ${LANG_TURKISH} "V-Ray / Corona ve diğer render eklentileri ayrıca kurulur."
+LangString lumiaAIDownloadProgress ${LANG_ENGLISH} "Installing the private Ollama runtime (1.47 GB download if needed)..."
+LangString lumiaAIDownloadProgress ${LANG_TURKISH} "Özel Ollama runtime kuruluyor (gerekirse 1,47 GB indirilir)..."
+LangString lumiaAISaving ${LANG_ENGLISH} "Saving Local AI preferences..."
+LangString lumiaAISaving ${LANG_TURKISH} "Yerel AI tercihleri kaydediliyor..."
+LangString lumiaAISaved ${LANG_ENGLISH} "Local AI preferences saved. No model was started by setup. Open Menu > Local AI to review your configuration."
+LangString lumiaAISaved ${LANG_TURKISH} "Yerel AI tercihleri kaydedildi. Kurulumda model başlatılmadı. Ayarları Menü > Yerel AI bölümünden inceleyin."
+LangString lumiaAIError ${LANG_ENGLISH} "The optional Local AI runtime could not be installed. Check the installation details, network connection and free disk space.$\r$\n$\r$\nRetry downloads again. Cancel continues installing LumiaDAM without Local AI. You can run this installer later to add it."
+LangString lumiaAIError ${LANG_TURKISH} "İsteğe bağlı Yerel AI kurulumu tamamlanamadı. Kurulum ayrıntılarını, bağlantıyı ve boş disk alanını kontrol edin.$\r$\n$\r$\nYeniden Dene işlemi tekrarlar. İptal, LumiaDAM kurulumunu Yerel AI eklemeden sürdürür. Daha sonra bu kurulumu tekrar çalıştırabilirsiniz."
+LangString lumiaAIContinue ${LANG_ENGLISH} "Continuing LumiaDAM installation without the optional Local AI runtime."
+LangString lumiaAIContinue ${LANG_TURKISH} "LumiaDAM kurulumuna isteğe bağlı Yerel AI eklenmeden devam ediliyor."
+LangString lumiaFinishTitle ${LANG_ENGLISH} "Your workspace is ready."
+LangString lumiaFinishTitle ${LANG_TURKISH} "Çalışma alanınız hazır."
+LangString lumiaFinishText ${LANG_ENGLISH} "LumiaDAM is installed.$\r$\n$\r$\nAdd a library to get started. Configure models and scheduling from Menu > Local AI.$\r$\n$\r$\nIf you installed the 3ds Max plugin, restart Max to connect."
+LangString lumiaFinishText ${LANG_TURKISH} "LumiaDAM kuruldu.$\r$\n$\r$\nBaşlamak için bir kütüphane ekleyin. Modelleri ve çalışma planını Menü > Yerel AI bölümünden ayarlayın.$\r$\n$\r$\n3ds Max eklentisini kurduysanız bağlantı için Max uygulamasını yeniden başlatın."
+LangString lumiaAIKept ${LANG_ENGLISH} "Local AI runtime, downloaded models and settings are kept in $LOCALAPPDATA\LumiaDAM\local-ai."
+LangString lumiaAIKept ${LANG_TURKISH} "Yerel AI runtime, indirilen modeller ve ayarlar $LOCALAPPDATA\LumiaDAM\local-ai dizininde korunur."
+LangString lumiaOpenWith ${LANG_ENGLISH} "Open with ${PRODUCTNAME}"
+LangString lumiaOpenWith ${LANG_TURKISH} "${PRODUCTNAME} ile aç"
+LangString lumiaLanguageSaving ${LANG_ENGLISH} "Saving application language..."
+LangString lumiaLanguageSaving ${LANG_TURKISH} "Uygulama dili kaydediliyor..."
+LangString lumiaLanguageError ${LANG_ENGLISH} "The application language could not be saved. Existing preferences were preserved. Close LumiaDAM, check access to your local app data folder, and retry."
+LangString lumiaLanguageError ${LANG_TURKISH} "Uygulama dili kaydedilemedi. Mevcut tercihler korundu. LumiaDAM uygulamasını kapatıp yerel uygulama verisi klasörüne erişimi kontrol edin ve yeniden deneyin."
 
 Function .onInit
+  StrCpy $LanguageConfirmed 0
+  StrCpy $AIExpanded 0
+  StrCpy $MaxExpanded 0
+  StrCpy $AIProvider 0
+  StrCpy $AIMode 0
+  StrCpy $MaxAutoLoad 1
+  ReadRegDWORD $MaxAutoLoad HKCU "${MANUPRODUCTKEY}" "MaxPluginAutoLoad"
+  ${If} ${Errors}
+    StrCpy $MaxAutoLoad 1
+  ${EndIf}
+  StrCpy $InstallMaxPlugin 0
+  ReadRegDWORD $InstallMaxPlugin HKCU "${MANUPRODUCTKEY}" "MaxPluginRequested"
+  ${If} ${Errors}
+    ReadRegDWORD $InstallMaxPlugin HKCU "${MANUPRODUCTKEY}" "MaxPluginInstalled"
+    ${If} ${Errors}
+      StrCpy $InstallMaxPlugin 0
+    ${EndIf}
+  ${EndIf}
   ${GetOptions} $CMDLINE "/P" $PassiveMode
   ${IfNot} ${Errors}
     StrCpy $PassiveMode 1
@@ -454,9 +1032,37 @@ Function .onInit
     StrCpy $UpdateMode 1
   ${EndIf}
 
+  StrCpy $InstallLocalAI 0
+  StrCpy $LocalAIConfirmed 0
+  ClearErrors
+  ReadRegDWORD $InstallLocalAI HKCU "${MANUPRODUCTKEY}" "LocalAIRequested"
+  ${If} ${Errors}
+  ${OrIf} $InstallLocalAI <> ${BST_CHECKED}
+    StrCpy $InstallLocalAI 0
+  ${EndIf}
+  ${If} ${FileExists} "$LOCALAPPDATA\LumiaDAM\local-ai\settings.json"
+    ; Güncellemede model, endpoint ve çalışma saati kullanıcı değiştirmedikçe korunur.
+    StrCpy $AIProvider 3
+    StrCpy $AIMode 2
+  ${EndIf}
+
   !if "${DISPLAYLANGUAGESELECTOR}" == "true"
-    !insertmacro MUI_LANGDLL_DISPLAY
+    ${IfNot} ${Silent}
+    ${AndIf} $PassiveMode != 1
+    ${AndIf} $UpdateMode != 1
+      !insertmacro MUI_LANGDLL_DISPLAY
+      StrCpy $LanguageConfirmed 1
+    ${Else}
+      ReadRegStr $0 HKCU "${MANUPRODUCTKEY}" "Installer Language"
+      ${If} $0 != ""
+        StrCpy $LANGUAGE $0
+      ${EndIf}
+    ${EndIf}
   !endif
+  StrCpy $InstallLanguage "en"
+  ${If} $LANGUAGE == ${LANG_TURKISH}
+    StrCpy $InstallLanguage "tr"
+  ${EndIf}
 
   !insertmacro SetContext
 
@@ -620,6 +1226,9 @@ Section Install
   {{/each}}
 
   ; Copy external binaries
+  Call SaveInstallerLanguage
+  Call InstallSelectedMaxPlugin
+  Call InstallSelectedLocalAI
   {{#each binaries}}
     File /a "/oname={{this}}" "{{no-escape @key}}"
   {{/each}}
@@ -627,7 +1236,7 @@ Section Install
   ; Create file associations
   {{#each file_associations as |association| ~}}
     {{#each association.ext as |ext| ~}}
-       !insertmacro APP_ASSOCIATE "{{ext}}" "{{or association.name ext}}" "{{association-description association.description ext}}" "$INSTDIR\${MAINBINARYNAME}.exe,0" "Open with ${PRODUCTNAME}" "$INSTDIR\${MAINBINARYNAME}.exe $\"%1$\""
+       !insertmacro APP_ASSOCIATE "{{ext}}" "{{or association.name ext}}" "{{association-description association.description ext}}" "$INSTDIR\${MAINBINARYNAME}.exe,0" "$(lumiaOpenWith)" "$INSTDIR\${MAINBINARYNAME}.exe $\"%1$\""
     {{/each}}
   {{/each}}
 
@@ -724,8 +1333,6 @@ Function un.onInit
     !insertmacro MULTIUSER_UNINIT
   !endif
 
-  !insertmacro MUI_UNGETLANGUAGE
-
   ${GetOptions} $CMDLINE "/P" $PassiveMode
   ${IfNot} ${Errors}
     StrCpy $PassiveMode 1
@@ -734,6 +1341,15 @@ Function un.onInit
   ${GetOptions} $CMDLINE "/UPDATE" $UpdateMode
   ${IfNot} ${Errors}
     StrCpy $UpdateMode 1
+  ${EndIf}
+  ${If} $PassiveMode == 1
+  ${OrIf} $UpdateMode == 1
+    ReadRegStr $0 HKCU "${MANUPRODUCTKEY}" "Installer Language"
+    ${If} $0 != ""
+      StrCpy $LANGUAGE $0
+    ${EndIf}
+  ${Else}
+    !insertmacro MUI_UNGETLANGUAGE
   ${EndIf}
 FunctionEnd
 
@@ -750,6 +1366,18 @@ Section Uninstall
   Delete "$INSTDIR\${MAINBINARYNAME}.exe"
 
   ; Delete resources
+  DetailPrint "$(lumiaAIKept)"
+  SetShellVarContext current
+  ReadRegDWORD $0 HKCU "${MANUPRODUCTKEY}" "MaxPluginInstalled"
+  ${If} $0 == 1
+    Delete "$APPDATA\Autodesk\ApplicationPlugins\LumiaDAM.bundle\Contents\startup.ms"
+    Delete "$APPDATA\Autodesk\ApplicationPlugins\LumiaDAM.bundle\Contents\lumiadam_max.py"
+    Delete "$APPDATA\Autodesk\ApplicationPlugins\LumiaDAM.bundle\PackageContents.xml"
+    RMDir "$APPDATA\Autodesk\ApplicationPlugins\LumiaDAM.bundle\Contents"
+    RMDir "$APPDATA\Autodesk\ApplicationPlugins\LumiaDAM.bundle"
+    DeleteRegValue HKCU "${MANUPRODUCTKEY}" "MaxPluginInstalled"
+  ${EndIf}
+  !insertmacro SetContext
   {{#each resources}}
     Delete "$INSTDIR\\{{this.[1]}}"
   {{/each}}

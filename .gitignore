@@ -4,9 +4,11 @@ node_modules/
 apps/desktop/public/photocraft/
 apps/desktop/public/pdfcraft/
 apps/desktop/public/vectorcraft/
+apps/desktop/public/cadcraft/
 .pnpm-store/
 
 # ── Build Artifacts ────────────────────────────────────────────────────────
+artifacts/
 dist/
 build/
 target/

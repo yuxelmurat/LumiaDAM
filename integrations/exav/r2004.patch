@@ -1,0 +1,58 @@
+--- a/src/formats/dwg/r2004.rs
++++ b/src/formats/dwg/r2004.rs
+@@ -176,13 +176,18 @@
+         let (count, offset, lits) = match op {
+             0x11 => break,
+             0x10 | 0x12..=0x1F => {
+-                let count = if op == 0x10 {
++                // 0x08 uzunluğun parçası değil, geri kopyalama mesafesinin yüksek bitidir.
++                let count = if op & 0x07 == 0 {
+                     long_count(&mut i)? + 9
+                 } else {
+-                    usize::from(op & 0x0F) + 2
++                    usize::from(op & 0x07) + 2
+                 };
+                 let (offset, lits) = two_byte(&mut i)?;
+-                (count, offset + 0x3FFF, lits)
++                (
++                    count,
++                    offset + 0x3FFF + (usize::from(op & 0x08) << 11),
++                    lits,
++                )
+             }
+             0x20..=0x3F => {
+                 let count = if op == 0x20 {
+@@ -656,4 +661,32 @@
+             Err(Inflate::Invalid)
+         );
+     }
+-}
++
++    #[test]
++    fn lumiadam_uzak_kopyada_yuksek_bit_uzunluk_degildir() {
++        let prefix: Vec<u8> = (0..32768).map(|i| (i % 251) as u8).collect();
++        for (opcode, count, extra) in [(0x19, 3, None), (0x18, 13, Some(4))] {
++            let mut src = vec![0];
++            let mut length = prefix.len() - 18;
++            while length > 255 {
++                src.push(0);
++                length -= 255;
++            }
++            src.push(length as u8);
++            src.extend_from_slice(&prefix);
++            src.push(opcode);
++            if let Some(n) = extra {
++                src.push(n);
++            }
++            src.extend_from_slice(&[0, 0, 0x11]);
++            let mut want = prefix.clone();
++            want.extend_from_slice(&prefix[..count]);
++            assert_eq!(
++                decompress(&src, want.len()).unwrap(),
++                want,
++                "opcode {opcode:#x}"
++            );
++            assert_eq!(decompress(&src, want.len() - 1), Err(Inflate::TooLong));
++        }
++    }
++}

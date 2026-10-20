@@ -12,7 +12,7 @@ function setup(openWithDefault = async () => {}) {
     { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports: registry });
   const source = readFileSync(join(__dirname, '../src/components/AssetGrid/assetActions.ts'), 'utf8');
   runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
-    { exports, require: path => path.includes('editors') ? registry : ({ api: { openWithDefault } }) });
+    { exports, require: path => path.includes('editors') ? registry : ({ api: { openAssetExternal: asset => openWithDefault(asset.filePath) } }) });
   return { ...exports, canOpenInEditor: registry.canOpenInEditor };
 }
 
@@ -35,7 +35,7 @@ test('PhotoEditor yalnız desteklenen görsel ve proje formatlarında etkin olur
   assert.equal(canOpenInEditor(null, 'photo'), false);
 });
 
-test('DWG ve DXF dosyaları dış uygulama yerine dahili CAD Viewer ile açılır', async () => {
+test('DWG ve DXF çift tıklaması mevcut CAD Viewer içinde kalır', async () => {
   const external = [], cad = [];
   const { activateAsset } = setup(async path => external.push(path));
   for (const extension of ['dwg', 'DXF']) {
@@ -46,7 +46,22 @@ test('DWG ve DXF dosyaları dış uygulama yerine dahili CAD Viewer ile açılı
   assert.deepEqual(external, []);
 });
 
+test('CADCraft yalnız DWG/DXF çizimlerinde etkinleşir; diğer editörlere aktarılmaz', () => {
+  const { canOpenInEditor } = setup();
+  for (const extension of ['dwg', 'DXF']) assert.equal(canOpenInEditor({ extension }, 'cadcraft'), true);
+  for (const extension of ['jpg', 'pdf', 'zip', 'max', 'exe']) assert.equal(canOpenInEditor({ extension }, 'cadcraft'), false);
+  assert.equal(canOpenInEditor(null, 'cadcraft'), false);
+});
+
 test('Windows açma hatası gizlenmez; arayüzün gösterebilmesi için döner', async () => {
   const { activateAsset } = setup(async () => { throw new Error('No default application'); });
   await assert.rejects(() => activateAsset({ extension: 'max', filePath: 'A:/scene.max' }, () => {}, () => {}, () => {}), /No default application/);
+});
+
+test('Max merge eylemi MAX, ZIP ve RAR dosyalarında kullanılabilir', () => {
+  const { canMergeInMax } = setup();
+  assert.equal(typeof canMergeInMax, 'function', 'Max merge eylemi henüz yok');
+  for (const extension of ['max', 'MAX', 'zip', 'ZIP', 'rar', 'RAR']) assert.equal(canMergeInMax({ extension }), true);
+  for (const extension of ['jpg', 'pdf', 'dwg', 'fbx', 'exe']) assert.equal(canMergeInMax({ extension }), false);
+  assert.equal(canMergeInMax(null), false);
 });

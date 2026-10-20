@@ -201,6 +201,13 @@ fn native_events_are_scoped_and_pending_directories_stay_bounded() {
     assert!(pending.paths.is_empty());
 }
 
+#[test]
+fn disconnected_sources_are_excluded_from_native_watch_roots() {
+    let f = Fixture::new();
+    let roots = vec![f.0.join("source"), f.0.join("disconnected")];
+    assert_eq!(available_watch_roots(&roots), [f.0.join("source")]);
+}
+
 #[tokio::test]
 async fn native_file_notification_drives_actual_subtree_indexing() {
     let f = Fixture::new();

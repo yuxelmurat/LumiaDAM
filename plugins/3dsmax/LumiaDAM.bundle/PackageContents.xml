@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ApplicationPackage SchemaVersion="1.0" AutodeskProduct="3ds Max" ProductType="Application" Name="LumiaDAM Bridge" AppVersion="0.1.1" UpgradeCode="{72E167B1-575B-4CC2-AB4C-E5E7D2DB6789}">
+  <CompanyDetails Name="LumiaDAM" Url="https://github.com/yuxelmurat/LumiaDAM" />
+  <Components Description="post-start-up scripts parts">
+    <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2022" SeriesMax="2027" />
+    <ComponentEntry ModuleName="./Contents/startup.ms" />
+  </Components>
+</ApplicationPackage>

@@ -1,7 +1,7 @@
 {
   "name": "lumiadam",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "LumiaDAM — 3D, mimarlık ve tasarım dosyaları için yerel dijital varlık yöneticisi",
   "scripts": {
     "dev": "pnpm --filter @lumiadam/desktop dev",
