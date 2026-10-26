@@ -136,7 +136,10 @@ jobs:
       # Ön yüz aynı workflow'da üretildi; Windows'ta tekrar WASM derlenmez.
       - name: Build NSIS installer
         shell: pwsh
-        run: pnpm --filter @lumiadam/desktop exec tauri build --bundles nsis --config '{"build":{"beforeBuildCommand":""}}'
+        run: |
+          $configPath = Join-Path $env:RUNNER_TEMP 'tauri-build.json'
+          '{"build":{"beforeBuildCommand":""}}' | Set-Content -LiteralPath $configPath -Encoding utf8
+          pnpm --filter @lumiadam/desktop exec tauri build --bundles nsis --config $configPath
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
