@@ -1,5 +1,7 @@
 # ── Dependencies ───────────────────────────────────────────────────────────
 node_modules/
+.cache/
+apps/desktop/public/photocraft/
 .pnpm-store/
 
 # ── Build Artifacts ────────────────────────────────────────────────────────

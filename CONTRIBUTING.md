@@ -40,28 +40,37 @@ $env:OPENDAM_WORKER = (Resolve-Path packages/preview-engine/worker.py).Path
 pnpm dev
 ```
 
-İşçi bu konumları otomatik de arar. OpenImageIO/Assimp gibi bağımlılıklar platforma göre ek kurulum gerektirebilir. Installer henüz bu ortamı kendi içinde dağıtmaz.
+İşçi bu konumları otomatik de arar. Installer `preview-engine/worker.py` ve bağımlılık listesini içerir; Python çalışma zamanı ve OpenImageIO/Assimp gibi isteğe bağlı yerel bağımlılıklar ayrıca kurulmalıdır. Eksik önkoşullar Activity panelinde gösterilir. Paketlenmiş işçi için `OPENDAM_WORKER` gerekmez; özel Python ortamının executable yolunu `OPENDAM_PYTHON` ile seçebilirsiniz.
 
 ## Doğrulama
 
 Komutları depo kökünde çalıştırın:
 
 ```powershell
+pnpm typecheck
+pnpm --filter @lumiadam/desktop test
 pnpm --filter @lumiadam/desktop vite:build
 cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
-ruff check packages/preview-engine/
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
+cargo test --manifest-path tools/cleanup/Cargo.toml
+python -m pip install ruff==0.17.0 Pillow==10.4.0
+python -m ruff check packages/preview-engine/
+python packages/preview-engine/test_worker.py
 pnpm build
 ```
 
-CI, ön yüz derlemesi, Rust Clippy ve Python Ruff kontrolü içerir. Kök `pnpm test` komutu mevcut test paketi bulunduğunun kanıtı değildir; yapılandırılmış kapsamlı bir test paketi yoktur. Başarısız kontrolü geçti diye raporlamayın; kullanılan sürümleri ve ilk ilgili hatayı PR'a yazın.
+CI; tüm workspace için typecheck, ön yüz davranış testleri ve derlemesi, Rust Clippy/testler, cleanup koruması, sabit sürüm Ruff ve Python işçi protokolünü denetler. Ayrı Windows işlerinde NSIS installer üretilir, ardından başka bir runner üzerinde kurulum/açılış/yeniden kurulum/kaldırma test edilir; SHA-256 ve sonuçlar artifact olarak saklanır. Gerçek DCC/NAS testlerinin kapsamı ve kalan yayın koşulları [dağıtım doğrulama kaydındadır](docs/release-validation.md). Başarısız veya çalıştırılmamış kontrolü geçti diye raporlamayın.
 
 Tauri derlemesi JavaScript/Rust sürüm uyuşmazlığı bildirirse gerçek sürümleri `pnpm --filter @lumiadam/desktop exec tauri info` ile inceleyin. Sürüm kontrolünü atlamayın. Bu dönüşümde tekrar derlemeyi engelleyen dört paket hizalanmıştır: Rust Tauri 2.12.2 / JavaScript API 2.12.1 (uyumlu 2.12 minor), dialog 2.8.1, fs 2.6.0, shell 2.4.1. JavaScript ve Rust taraflarında sürümler sabitlenmiştir; ileride birlikte güncelleyin. Cargo kilit dosyaları upstream'de takip edilmediğinden Rust çözümlemesi zamanla değişebilir.
 
-Mevcut başlangıç kodunda iki ek kontrol sorunu vardır: kök `pnpm typecheck`, deneysel `packages/dcc-bridge` paketinin `tsconfig.json` dosyası olmadığı için başarısız olur; Python Ruff kontrolü `worker.py` içindeki `UP038` uyarısını bildirir. Masaüstü için yukarıdaki hedefli TypeScript/Vite kontrolünü kullanın. Bu sorunlar marka dönüşümünde işlevsel düzeltme olarak ele alınmamıştır.
+`packages/dcc-bridge/tsconfig.json` hem typecheck hem declaration/JavaScript çıktısı üretimini kapsar. Ruff sürümü proje ve CI'da `0.17.0` olarak sabitlenmiştir; eski Ruff sürümlerinin kaldırılmış `UP038` kuralı güncel kontrol sonucu sayılmaz.
 
 ## Veri ve marka uyumluluğu
 
-- `.opendam/library.sqlite`, `.opendam/thumbs/` ve göreli yollar korunmalıdır. Bu bir veri biçimi adıdır.
+- Uygulama arayüzündeki metinleri ve uygulamanın ürettiği hata mesajlarını İngilizce yazın. Kod açıklamaları ve geliştirme notları Türkçe olabilir.
+- Simge veya arayüz değişikliklerinde `build.rs` dosyasındaki `icons` ve `../dist` bağımlılıklarını koruyun; aksi halde eski kaynaklar EXE içinde kalabilir. Windows simgesini yalnız PNG dosyasında değil, derlenmiş EXE'den çıkararak da kontrol edin.
+
+- Eski `.opendam` kataloglarının aktarım uyumluluğunu koruyun. Yeni katalogları kaynak arşive yazmayın; kaynak yollarını ve yerel önizleme yollarını ayırın. [Depolama düzeni](docs/storage.md).
 - Kütüphane SQLite bağlantılarındaki rollback journal yaklaşımını marka dönüşümünde değiştirmeyin.
 - `OPENDAM_PYTHON`, `OPENDAM_WORKER`, `application/opendam-asset-id` ve Blender operator kimlikleri geriye uyumluluk yüzeyleridir.
 - Yeni uygulama kimliği OpenDAM'den ayrı ayarlar oluşturur. Otomatik veri taşıma yoktur.

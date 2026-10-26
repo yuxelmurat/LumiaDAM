@@ -12,6 +12,8 @@ import { useUIStore } from './store';
 import { useLibraryStore, useTagStore, useCollectionStore, useAssetStore } from './store';
 import { api } from './api';
 import styles from './App.module.css';
+import { EditorPanel, canEditImage } from './components/Editor/EditorPanel';
+import type { Asset } from './types';
 
 function isEditingText(): boolean {
   const active = document.activeElement;
@@ -31,6 +33,10 @@ export default function App() {
   const search = useAssetStore((s) => s.search);
 
   const [quickLookOpen, setQuickLookOpen] = useState(false);
+  const [editorAsset, setEditorAsset] = useState<Asset | null>(null);
+  const [workspace, setWorkspace] = useState<'library' | 'editor'>('library');
+  const workspaceRef = useRef(workspace);
+  workspaceRef.current = workspace;
   const [copyToast, setCopyToast] = useState<string | null>(null);
   const [assetsToDelete, setAssetsToDelete] = useState<string[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -68,6 +74,10 @@ export default function App() {
 
     // Keyboard shortcuts: F5, Space hold for QuickLook, Ctrl+C to copy path
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (workspaceRef.current === 'editor') {
+        if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r')) e.preventDefault();
+        return;
+      }
       // Refresh
       if (e.key === 'F5' || (e.ctrlKey && e.key.toLowerCase() === 'r')) {
         e.preventDefault();
@@ -201,6 +211,9 @@ export default function App() {
       toastTimeoutRef.current = window.setTimeout(() => setCopyToast(null), 2200);
     } catch (err) {
       console.error('Failed to delete assets:', err);
+      setCopyToast(`Could not delete all files: ${String(err)}`);
+      await useAssetStore.getState().search();
+      await useLibraryStore.getState().fetchLibraries();
     } finally {
       setAssetsToDelete([]);
     }
@@ -208,13 +221,34 @@ export default function App() {
 
   return (
     <div className={styles.layout}>
-      <Toolbar />
-      <div className={styles.body}>
+      <Toolbar
+        workspace={workspace}
+        editorAssetName={editorAsset?.fileName}
+        onOpenLibraries={() => setWorkspace('library')}
+        onOpenPhotoEditor={() => {
+          if (!editorAsset && focusedAsset && canEditImage(focusedAsset)) setEditorAsset(focusedAsset);
+          setWorkspace('editor');
+          setQuickLookOpen(false);
+        }}
+      />
+      <div className={styles.body} style={{ display: workspace === 'library' ? undefined : 'none' }}>
         {sidebarOpen && <Sidebar />}
         <main className={styles.main}>
           <AssetGrid />
         </main>
         {detailPanelOpen && <DetailPanel />}
+      </div>
+      <div className={styles.editorWorkspace} style={{ display: workspace === 'editor' ? undefined : 'none' }}>
+        {editorAsset ? (
+          <EditorPanel asset={editorAsset} onClose={() => { setEditorAsset(null); setWorkspace('library'); }} />
+        ) : (
+          <div className={styles.editorEmpty}>
+            <img src="/brand/lumiadam-mark.png" alt="" />
+            <h2>PhotoEditor</h2>
+            <p>Select a JPG, PNG, WebP, BMP, or TIFF image in Libraries, then open PhotoEditor.</p>
+            <button type="button" onClick={() => setWorkspace('library')}>Open Libraries</button>
+          </div>
+        )}
       </div>
       <StatusBar />
 

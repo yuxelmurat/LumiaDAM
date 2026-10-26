@@ -46,6 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_assets_color_label  ON assets(color_label);
 CREATE INDEX IF NOT EXISTS idx_assets_is_favorite  ON assets(is_favorite);
 CREATE INDEX IF NOT EXISTS idx_assets_modified_at  ON assets(modified_at);
 CREATE INDEX IF NOT EXISTS idx_assets_extension    ON assets(extension);
+CREATE INDEX IF NOT EXISTS idx_assets_path_nocase  ON assets(file_path COLLATE NOCASE);
 
 -- ── Asset ↔ Tag join table ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS asset_tags (

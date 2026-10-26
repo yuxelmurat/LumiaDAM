@@ -109,6 +109,7 @@ export function DetailPanel() {
       await deleteAsset(asset.id, true);
     } catch (err) {
       console.error('Failed to delete asset:', err);
+      setNameError(`Could not delete file: ${String(err)}`);
     }
   };
 

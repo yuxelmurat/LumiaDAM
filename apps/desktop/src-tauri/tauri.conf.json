@@ -37,6 +37,8 @@
           "$HOME/**/*",
           "$DESKTOP/**",
           "$DESKTOP/**/*",
+          "A:\\**",
+          "A:\\**\\*",
           "C:\\**",
           "C:\\**\\*",
           "D:\\**",
@@ -52,6 +54,10 @@
     "targets": [
       "nsis"
     ],
+    "resources": {
+      "../../../packages/preview-engine/worker.py": "preview-engine/worker.py",
+      "../../../packages/preview-engine/requirements.txt": "preview-engine/requirements.txt"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -62,7 +68,9 @@
     "windows": {
       "nsis": {
         "template": "installer.nsi",
-        "startMenuFolder": "LumiaDAM"
+        "startMenuFolder": "LumiaDAM",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico"
       }
     },
     "publisher": "yuxelmurat",
