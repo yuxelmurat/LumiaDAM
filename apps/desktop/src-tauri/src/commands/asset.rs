@@ -775,6 +775,16 @@ async fn delete_catalog_asset(
                 if !canonical.starts_with(root) || !canonical.is_file() {
                     return Err("Source is outside the library or is not a file; catalog was preserved".into());
                 }
+                // Trash da yolu çözer; dosya veya ara klasör linkinde hedefi silmemek için reddet.
+                let mut component_path = abs_path.as_path();
+                while component_path != lib.root_path {
+                    if std::fs::symlink_metadata(component_path).map_err(|e| e.to_string())?
+                        .file_type().is_symlink() {
+                        return Err("Linked files or directories cannot be safely recycled; source and catalog were preserved".into());
+                    }
+                    component_path = component_path.parent()
+                        .ok_or("Source path cannot be verified within the library")?;
+                }
                 // Windows ağ dosyalarında geri dönüşüm garantisi vermez; silmeyi reddet.
                 #[cfg(windows)]
                 if matches!(canonical.components().next(), Some(std::path::Component::Prefix(prefix))

@@ -12,7 +12,7 @@ Son güncelleme: 27 Ekim 2026. Bu kayıt `codex/lumiadam-rebrand` PR'ının gün
 | `pnpm --filter @lumiadam/desktop test` | 16 test geçti; Node ortamında mevcut localStorage uyarıları var |
 | `pnpm --filter @lumiadam/desktop vite:build` | PhotoCraft WASM dahil geçti; mevcut büyük chunk/PhotoCraft dead-code uyarıları var |
 | `cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings` | Geçti |
-| `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib -- --include-ignored --test-threads=1` | Açıkça seçilmiş NAS paylaşımı ile 25 test geçti |
+| `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib -- --include-ignored --test-threads=1` | Açıkça seçilmiş NAS paylaşımı ile 27 test geçti |
 | `cargo test --manifest-path tools/cleanup/Cargo.toml` | 1 koruma testi geçti |
 | Ruff 0.17.0 ile `ruff check packages/preview-engine/` | Geçti; proje aynı sürümü zorunlu tutar |
 | Python 3.11.9 / Pillow 10.4.0 ile `python packages/preview-engine/test_worker.py` | Gerçek alt süreçte önizleme üretimi, boyutlandırma, eksik dosya ve bilinmeyen metot yanıtları geçti |
@@ -20,7 +20,7 @@ Son güncelleme: 27 Ekim 2026. Bu kayıt `codex/lumiadam-rebrand` PR'ının gün
 
 ## Veri güvenliği ve NAS kapsamı
 
-- Geri dönüşüm kutusu hatası kalıcı silmeye dönüştürülmez. Kayıtlar, dosya taşınamadan kaldırılmaz. Kütüphane dışına çıkan yollar reddedilir. Katalog ilişkileri transaction içinde silinir ve SQL hataları kullanıcıya ulaşır.
+- Geri dönüşüm kutusu hatası kalıcı silmeye dönüştürülmez. Kayıtlar, dosya taşınamadan kaldırılmaz. Kütüphane dışına çıkan yollar, link dosyaları ve link içeren ara klasörler reddedilir. Katalog ilişkileri transaction içinde silinir ve SQL hataları kullanıcıya ulaşır. Dosya zaten geri dönüşüme taşındıktan sonra SQL yazımı başarısız olursa dosya geri dönüşümde, kayıt katalogda kalabilir; dosya sistemi ile SQLite arasında atomik işlem garantisi yoktur.
 - Windows'ta UNC/ağ kaynaklarının fiziksel silinmesi reddedilir. İşletim sistemi bu dosyalarda geri dönüşüm garantisi vermediği için dosya ve katalog korunur. `deleteFile=false` ile yalnız katalog kaydı kaldırılabilir.
 - Gerçek SMB paylaşımında yalnız testin oluşturduğu benzersiz klasör kullanıldı. Kaynak oluşturma/okuma, yerel katalog, ağda fiziksel silmeyi reddetme, kaynak klasörünün geçici olarak erişilemez olması, yeniden erişim ve katalogdan kaldırma doğrulandı. Mevcut arşiv dosyaları değiştirilmedi.
 - Bu test sunucunun ağ bağlantısını kesmez; kablo/SMB oturumu kopması, sunucu yeniden başlatılması, paylaşım izinleri ve birden fazla istemcinin aynı kataloğa yazması için sertifikasyon değildir. Katalog ve önizlemeleri yerel diskte tutun. Ağ kataloğu/eşzamanlı yazma desteği bu kayıtla doğrulanmış sayılmaz.
@@ -41,6 +41,8 @@ Blender testi gerçek Blender içinde dosya içe aktarım testidir. Masaüstü u
 ## Windows ve yayın kapıları
 
 CI iki ayrı Windows runner kullanır: biri aynı workflow'nun ön yüz artifact'ından NSIS installer üretir; diğeri sadece installer'ı alıp farklı çalışma dizini ve geliştirici araçları çıkarılmış uygulama PATH'iyle kurulum, ilk açılış, yeniden kurulum, kaldırma ve veri korumasını sınar. `windows-installer` ve SHA-256/sonuçları içeren `windows-install-evidence` artifact'ları saklanır. Bu bölümün test sonucu ilgili PR commit'inin CI çalışmasıyla değerlendirilmelidir; script'in varlığı başarılı test sayılmaz.
+
+Yerel `pnpm build` Windows x64 NSIS installer üretti. Bu dosya yayımlanmış release'in yerine konulmadı ve mevcut kullanıcı kurulumunda çalıştırılmadı. CI, Trunk 0.21.14'ün resmi hazır paketini sabit SHA-256 ile doğrulayarak kullanır; her kontrolde aynı derleyiciyi kaynaktan kurmaz.
 
 Bu smoke testi temiz kullanıcı profilli GitHub Windows runner kapsamındadır. WebView2 bulunmayan tamamen temiz Windows 10/11, çevrimdışı önkoşul kurulumu ve farklı yetki düzeylerinin tümü için manuel VM matrisi yerine geçmez. Bu bilgisayarda çalışır temiz Windows VM/Sandbox bulunamadı. Mevcut kullanıcı kurulumuna test amaçlı dokunulmadı.
 

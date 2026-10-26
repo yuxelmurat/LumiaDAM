@@ -352,11 +352,13 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                     }
 
                     // ── 2. Persistent Python Worker Path for 3D/CAD/DCC Formats ──
+                    let mut worker_start_error = None;
                     if py_worker.is_none() {
                         match PythonWorker::spawn(&py_exec, &worker_py).await {
                             Ok(w) => py_worker = Some(w),
                             Err(e) => {
                                 tracing::error!("Failed to spawn Python preview worker: {}", e);
+                                worker_start_error = Some(e);
                             }
                         }
                     }
@@ -387,7 +389,7 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                             }
                         }
                     } else {
-                        Err(anyhow!("Python worker unavailable"))
+                        Err(worker_start_error.unwrap_or_else(|| anyhow!("Python worker unavailable")))
                     };
 
                     let mut success = false;
@@ -397,6 +399,9 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                         .unwrap_or_else(|| "Preview worker did not return a usable preview".into());
 
                     if let Ok(resp) = py_resp {
+                        if let Some(error) = resp.get("error").and_then(|value| value.as_str()) {
+                            preview_error = error.to_string();
+                        }
                         if let Some(res) = resp.get("result") {
                             if res.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
                                 success = true;

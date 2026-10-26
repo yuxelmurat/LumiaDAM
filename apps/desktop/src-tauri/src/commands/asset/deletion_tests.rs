@@ -135,3 +135,35 @@ async fn catalog_only_removal_keeps_source_file() {
     assert_eq!(f.count("asset_tags").await, 0);
     f.close().await;
 }
+
+#[cfg(windows)]
+#[tokio::test]
+async fn linked_file_never_recycles_its_target() {
+    let f = Fixture::new().await;
+    let target = f.library.root_path.join("asset.jpg");
+    let link = f.library.root_path.join("link.jpg");
+    std::os::windows::fs::symlink_file(&target, &link).unwrap();
+    sqlx::query("UPDATE assets SET file_path = 'link.jpg' WHERE id = 'asset'")
+        .execute(&f.library.pool).await.unwrap();
+    assert!(delete_catalog_asset("asset".into(), Some(true), &f.db).await.is_err());
+    assert_eq!(std::fs::read(target).unwrap(), b"korunacak kaynak");
+    assert_eq!(f.count("assets").await, 1);
+    f.close().await;
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn linked_directory_never_recycles_a_target_file() {
+    let f = Fixture::new().await;
+    let directory = f.library.root_path.join("original");
+    std::fs::create_dir(&directory).unwrap();
+    std::fs::rename(f.library.root_path.join("asset.jpg"), directory.join("asset.jpg")).unwrap();
+    let link = f.library.root_path.join("alias");
+    std::os::windows::fs::symlink_dir(&directory, &link).unwrap();
+    sqlx::query("UPDATE assets SET file_path = 'alias/asset.jpg' WHERE id = 'asset'")
+        .execute(&f.library.pool).await.unwrap();
+    assert!(delete_catalog_asset("asset".into(), Some(true), &f.db).await.is_err());
+    assert_eq!(std::fs::read(directory.join("asset.jpg")).unwrap(), b"korunacak kaynak");
+    assert_eq!(f.count("assets").await, 1);
+    f.close().await;
+}

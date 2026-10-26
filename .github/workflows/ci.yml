@@ -50,7 +50,11 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - name: Install PhotoCraft web builder
-        run: cargo install trunk --version 0.21.14 --locked
+        run: |
+          curl --fail --location --retry 3 https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz --output "$RUNNER_TEMP/trunk.tar.gz"
+          echo "f2b4680cd239693a646a2795e4633c625328d7b2a044fbe749fa3a2fe9e7036b  $RUNNER_TEMP/trunk.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/trunk.tar.gz" -C "$HOME/.cargo/bin" trunk
+          trunk --version
       - name: Test frontend behavior
         run: pnpm --filter @lumiadam/desktop test
       # Note: vite:build in apps/desktop already executes "tsc -b && vite build",
@@ -97,8 +101,8 @@ jobs:
       - uses: astral-sh/ruff-action@v3
         with:
           version: '0.17.0'
-          args: "check"
-          src: "packages/preview-engine/"
+          args: 'check'
+          src: 'packages/preview-engine/'
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
