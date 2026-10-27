@@ -58,6 +58,8 @@ try {
         Assert-Check (Test-Path -LiteralPath (Join-Path $installDir 'preview-engine/requirements.txt')) 'Preview prerequisites are packaged'
         $start = [System.Diagnostics.ProcessStartInfo]::new($exe)
         $start.UseShellExecute = $false
+        $start.RedirectStandardError = $true
+        $start.RedirectStandardOutput = $true
         $start.WorkingDirectory = $testRoot
         $start.WindowStyle = 'Normal'
         $start.Environment['PATH'] = "$env:WINDIR\System32;$env:WINDIR"
@@ -65,16 +67,24 @@ try {
         $start.Environment['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = '--disable-gpu'
         $start.Environment.Remove('OPENDAM_WORKER') | Out-Null
         $app = [System.Diagnostics.Process]::Start($start)
+        $appOutput = $app.StandardOutput.ReadToEndAsync()
+        $appError = $app.StandardError.ReadToEndAsync()
+        $catalog = Join-Path $appData 'data/opendam.sqlite'
         $deadline = [DateTime]::UtcNow.AddSeconds(45)
         do {
             Start-Sleep -Milliseconds 500
             $app.Refresh()
-        } while (-not $app.HasExited -and $app.MainWindowHandle -eq 0 -and [DateTime]::UtcNow -lt $deadline)
+        } while (-not $app.HasExited -and ($app.MainWindowHandle -eq 0 -or -not (Test-Path -LiteralPath $catalog)) -and [DateTime]::UtcNow -lt $deadline)
+        $report.applicationWindowTitle = $app.MainWindowTitle
+        $report.catalogPath = $catalog
+        $report.applicationExited = $app.HasExited
         Assert-Check (-not $app.HasExited -and $app.MainWindowHandle -ne 0) "Application window opened without developer PATH, round $round"
-        Assert-Check ($app.MainWindowTitle -like '*LumiaDAM*') 'Correct application window title'
-        Assert-Check (Test-Path -LiteralPath (Join-Path $appData 'data/opendam.sqlite')) 'Local catalog initialized'
+        Assert-Check ($app.MainWindowTitle -eq 'LumiaDAM') 'Correct application window title'
+        Assert-Check (Test-Path -LiteralPath $catalog) 'Local catalog initialized'
         $app.CloseMainWindow() | Out-Null
         Assert-Check ($app.WaitForExit(20000)) 'Application closed normally'
+        $report.applicationOutput = $appOutput.GetAwaiter().GetResult()
+        $report.applicationError = $appError.GetAwaiter().GetResult()
         $app = $null
     }
     $sentinel = Join-Path $appData 'data/preserve-test.txt'
@@ -95,6 +105,8 @@ try {
     throw
 } finally {
     if ($app -and -not $app.HasExited) { $app.Kill($true); $app.WaitForExit() }
+    if ($appOutput) { $report.applicationOutput = $appOutput.GetAwaiter().GetResult() }
+    if ($appError) { $report.applicationError = $appError.GetAwaiter().GetResult() }
     $parent = Split-Path -Parent ([System.IO.Path]::GetFullPath($ReportPath))
     New-Item -ItemType Directory -Path $parent -Force | Out-Null
     $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ReportPath -Encoding utf8
