@@ -211,6 +211,9 @@ export default function App() {
       toastTimeoutRef.current = window.setTimeout(() => setCopyToast(null), 2200);
     } catch (err) {
       console.error('Failed to delete assets:', err);
+      setCopyToast(`Could not delete all files: ${String(err)}`);
+      await useAssetStore.getState().search();
+      await useLibraryStore.getState().fetchLibraries();
     } finally {
       setAssetsToDelete([]);
     }

@@ -31,6 +31,7 @@ export interface LibraryWorkStatus {
   previewCompleted: number;
   previewPending: number;
   previewFailed: number;
+  previewError: string | null;
 }
 
 export const api = {

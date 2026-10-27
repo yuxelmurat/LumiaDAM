@@ -87,6 +87,7 @@ export function StatusBar() {
             {status.previewFailed > 0 && ` · ${status.previewFailed.toLocaleString()} failed`}</span>
           <span>Last full scan: {status.lastScanAt ? new Date(status.lastScanAt).toLocaleString() : 'Not recorded yet'}</span>
           {status.lastError && <span className={styles.error}>Last scan failed: {status.lastError}</span>}
+          {status.previewError && <span className={styles.error} role="alert">Preview unavailable: {status.previewError}</span>}
         </div>)}
       </section>}
     </footer>

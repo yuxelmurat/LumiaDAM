@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::io::{AsyncWriteExt, AsyncBufReadExt, BufReader};
 use serde_json::json;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use crate::AppState;
 use crate::db::resolve_path;
 
@@ -94,6 +94,9 @@ struct PythonWorker {
 
 impl PythonWorker {
     async fn spawn(py_exec: &Path, worker_py: &Path) -> Result<Self> {
+        if !worker_py.is_file() {
+            return Err(anyhow!("Python preview worker is missing. Reinstall LumiaDAM or set OPENDAM_WORKER."));
+        }
         let mut cmd = Command::new(py_exec);
         cmd.arg(worker_py)
             .stdin(std::process::Stdio::piped())
@@ -105,7 +108,9 @@ impl PythonWorker {
         #[cfg(windows)]
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
-        let mut child = cmd.spawn()?;
+        let mut child = cmd.spawn().map_err(|e| anyhow!(
+            "Optional Python previews require Python 3.10+ and preview dependencies. Set OPENDAM_PYTHON to its executable. {e}"
+        ))?;
         let stdin = child.stdin.take().ok_or_else(|| anyhow!("Failed to take python stdin"))?;
         let stdout = child.stdout.take().ok_or_else(|| anyhow!("Failed to take python stdout"))?;
         let reader = BufReader::new(stdout);
@@ -152,6 +157,9 @@ pub fn start_preview_worker(state: Arc<AppState>) {
             .unwrap_or_else(|| current_dir.clone());
 
         let mut search_roots = vec![current_dir.clone(), exe_dir.clone()];
+        if let Ok(resources) = state.app_handle.path().resource_dir() {
+            search_roots.insert(0, resources);
+        }
         let mut curr = current_dir.clone();
         for _ in 0..4 {
             if let Some(parent) = curr.parent() {
@@ -201,6 +209,7 @@ pub fn start_preview_worker(state: Arc<AppState>) {
             let mut found_worker = None;
             for root in &search_roots {
                 let candidates = [
+                    root.join("preview-engine").join("worker.py"),
                     root.join("packages").join("preview-engine").join("worker.py"),
                     root.join("worker.py"),
                 ];
@@ -343,11 +352,13 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                     }
 
                     // ── 2. Persistent Python Worker Path for 3D/CAD/DCC Formats ──
+                    let mut worker_start_error = None;
                     if py_worker.is_none() {
                         match PythonWorker::spawn(&py_exec, &worker_py).await {
                             Ok(w) => py_worker = Some(w),
                             Err(e) => {
                                 tracing::error!("Failed to spawn Python preview worker: {}", e);
+                                worker_start_error = Some(e);
                             }
                         }
                     }
@@ -378,14 +389,19 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                             }
                         }
                     } else {
-                        Err(anyhow!("Python worker unavailable"))
+                        Err(worker_start_error.unwrap_or_else(|| anyhow!("Python worker unavailable")))
                     };
 
                     let mut success = false;
                     let mut result_thumb = None;
                     let mut result_model = None;
+                    let mut preview_error = py_resp.as_ref().err().map(|e| e.to_string())
+                        .unwrap_or_else(|| "Preview worker did not return a usable preview".into());
 
                     if let Ok(resp) = py_resp {
+                        if let Some(error) = resp.get("error").and_then(|value| value.as_str()) {
+                            preview_error = error.to_string();
+                        }
                         if let Some(res) = resp.get("result") {
                             if res.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
                                 success = true;
@@ -396,6 +412,8 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                                     result_model = Some(model.to_string());
                                 }
                             } else {
+                                preview_error = res.get("error").and_then(|value| value.as_str())
+                                    .unwrap_or("Optional preview dependencies are missing or this format is unsupported").to_string();
                                 tracing::error!("Python returned ok=false: {:?}", res);
                             }
                         } else {
@@ -452,6 +470,8 @@ pub fn start_preview_worker(state: Arc<AppState>) {
                             .bind(&asset_id)
                             .execute(pool)
                             .await;
+                        let _ = sqlx::query("INSERT INTO settings(key, value) VALUES('preview_error', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+                            .bind(&preview_error).execute(pool).await;
                         let _ = state.app_handle.emit("preview:error", json!({
                             "assetId": &asset_id,
                             "jobId": &job_id,

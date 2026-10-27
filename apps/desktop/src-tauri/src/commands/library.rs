@@ -26,6 +26,7 @@ pub struct LibraryWorkStatus {
     preview_completed: i64,
     preview_pending: i64,
     preview_failed: i64,
+    preview_error: Option<String>,
 }
 
 #[tauri::command]
@@ -48,6 +49,10 @@ pub async fn get_library_work_status(state: State<'_, Arc<AppState>>) -> Result<
         let (preview_total, preview_completed, preview_pending, preview_failed): (i64, i64, i64, i64) =
             sqlx::query_as("SELECT COUNT(*), COALESCE(SUM(status = 'done'), 0), COALESCE(SUM(status IN ('pending', 'queued', 'processing')), 0), COALESCE(SUM(status = 'error'), 0) FROM preview_jobs")
                 .fetch_one(&library.pool).await.map_err(|e| e.to_string())?;
+        let preview_error = if preview_failed > 0 {
+            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'preview_error'")
+                .fetch_optional(&library.pool).await.map_err(|e| e.to_string())?
+        } else { None };
         statuses.push(LibraryWorkStatus {
             id: library.id,
             name: library.name,
@@ -61,6 +66,7 @@ pub async fn get_library_work_status(state: State<'_, Arc<AppState>>) -> Result<
             preview_completed,
             preview_pending,
             preview_failed,
+            preview_error,
         });
     }
     Ok(statuses)

@@ -11,6 +11,9 @@ use crate::db::{resolve_path, make_relative_path, is_legacy_thumbnail};
 
 type Result<T> = std::result::Result<T, String>;
 
+#[cfg(test)]
+mod deletion_tests;
+
 #[derive(Debug, Clone, sqlx::FromRow)]
 struct RawAssetRow {
     pub id: String,
@@ -737,8 +740,18 @@ pub async fn delete_asset(
     delete_file: Option<bool>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<()> {
+    delete_catalog_asset(id, delete_file, &state.db).await?;
+    let _ = state.app_handle.emit("library:updated", ());
+    Ok(())
+}
+
+async fn delete_catalog_asset(
+    id: String,
+    delete_file: Option<bool>,
+    db: &crate::db::Database,
+) -> Result<()> {
     let should_delete_file = delete_file.unwrap_or(true);
-    let libs = state.db.get_all_libraries().await;
+    let libs = db.get_all_libraries().await;
     let mut target_pools = Vec::new();
     let mut file_to_delete: Option<std::path::PathBuf> = None;
 
@@ -747,7 +760,7 @@ pub async fn delete_asset(
             .bind(&id)
             .fetch_optional(&lib.pool)
             .await
-            .unwrap_or(None);
+            .map_err(|e| e.to_string())?;
 
         if let Some((fp,)) = row {
             let abs_path = if Path::new(&fp).is_absolute() {
@@ -755,37 +768,67 @@ pub async fn delete_asset(
             } else {
                 lib.root_path.join(fp)
             };
-            file_to_delete = Some(abs_path);
-            target_pools.push(lib.pool.clone());
-        }
-    }
-
-    target_pools.push(state.db.master_pool.clone());
-    target_pools.push(state.db.get_active_pool().await);
-
-    // If deleting from filesystem
-    if should_delete_file {
-        if let Some(ref path) = file_to_delete {
-            if path.exists() {
-                // Try moving to Recycle Bin first
-                if let Err(trash_err) = trash::delete(path) {
-                    tracing::warn!("Failed to trash {:?}, falling back to remove_file: {}", path, trash_err);
-                    let _ = std::fs::remove_file(path);
+            if should_delete_file {
+                let canonical = abs_path.canonicalize()
+                    .map_err(|e| format!("Source is unavailable; catalog was preserved: {e}"))?;
+                let root = lib.root_path.canonicalize().map_err(|e| e.to_string())?;
+                if !canonical.starts_with(root) || !canonical.is_file() {
+                    return Err("Source is outside the library or is not a file; catalog was preserved".into());
                 }
+                // Trash da yolu çözer; dosya veya ara klasör linkinde hedefi silmemek için reddet.
+                let mut component_path = abs_path.as_path();
+                while component_path != lib.root_path {
+                    if std::fs::symlink_metadata(component_path).map_err(|e| e.to_string())?
+                        .file_type().is_symlink() {
+                        return Err("Linked files or directories cannot be safely recycled; source and catalog were preserved".into());
+                    }
+                    component_path = component_path.parent()
+                        .ok_or("Source path cannot be verified within the library")?;
+                }
+                // Windows ağ dosyalarında geri dönüşüm garantisi vermez; silmeyi reddet.
+                #[cfg(windows)]
+                if matches!(canonical.components().next(), Some(std::path::Component::Prefix(prefix))
+                    if matches!(prefix.kind(), std::path::Prefix::UNC(..) | std::path::Prefix::VerbatimUNC(..))) {
+                    return Err("Network files cannot be safely recycled; file and catalog were preserved".into());
+                }
+                if file_to_delete.as_ref().is_some_and(|previous| previous != &canonical) {
+                    return Err("Asset matches multiple source files; nothing was deleted".into());
+                }
+                file_to_delete = Some(canonical);
             }
+            target_pools.push((lib.id.clone(), lib.pool.clone()));
         }
     }
 
-    // Delete records from databases
-    for pool in target_pools {
-        let _ = sqlx::query("DELETE FROM asset_tags WHERE asset_id = ?").bind(&id).execute(&pool).await;
-        let _ = sqlx::query("DELETE FROM collection_assets WHERE asset_id = ?").bind(&id).execute(&pool).await;
-        let _ = sqlx::query("DELETE FROM preview_jobs WHERE asset_id = ?").bind(&id).execute(&pool).await;
-        let _ = sqlx::query("DELETE FROM assets WHERE id = ?").bind(&id).execute(&pool).await;
-        let _ = sqlx::query("UPDATE libraries SET asset_count = (SELECT COUNT(*) FROM assets)").execute(&pool).await;
+    if target_pools.is_empty() {
+        return Err("Asset was not found in an open library".into());
     }
 
-    let _ = state.app_handle.emit("library:updated", ());
+    // Geri dönüşüm kutusu başarısızsa kalıcı silme yapılmaz ve katalog korunur.
+    if let Some(path) = file_to_delete {
+        tokio::task::spawn_blocking(move || trash::delete(path)).await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| format!("Could not move file to Recycle Bin; catalog was preserved: {e}"))?;
+    }
+
+    for (library_id, pool) in target_pools {
+        // İlişkiler ve varlık kaydı tek işlemde silinir; SQL hatası geri alınır.
+        let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+        for statement in [
+            "DELETE FROM asset_tags WHERE asset_id = ?",
+            "DELETE FROM collection_assets WHERE asset_id = ?",
+            "DELETE FROM preview_jobs WHERE asset_id = ?",
+            "DELETE FROM assets WHERE id = ?",
+        ] {
+            sqlx::query(statement).bind(&id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM assets")
+            .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        tx.commit().await.map_err(|e| e.to_string())?;
+        sqlx::query("UPDATE libraries SET asset_count = ? WHERE id = ?")
+            .bind(count).bind(library_id).execute(&db.master_pool).await.map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 
@@ -796,7 +839,7 @@ pub async fn delete_assets(
     state: State<'_, Arc<AppState>>,
 ) -> Result<()> {
     for id in ids {
-        let _ = delete_asset(id, delete_file, state.clone()).await;
+        delete_asset(id, delete_file, state.clone()).await?;
     }
     Ok(())
 }

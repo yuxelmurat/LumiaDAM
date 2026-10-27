@@ -133,17 +133,17 @@ See the [storage and migration guide](docs/storage.md) and the [folder search gu
 
 ## Availability and development status
 
-LumiaDAM is open source and under active development. **The latest public release is v0.1.0, a Windows x64 portable build.** It predates some capabilities described on this page. Experimental integrations and features still in development may not be present in that download. Check the [Releases page](https://github.com/yuxelmurat/LumiaDAM/releases) for the exact files available; an installable NSIS package is not currently published there.
+LumiaDAM is open source and under active development. **The latest public release is v0.1.1, a Windows x64 setup installer**, published from the separate `release/0.1.1` branch. Its publication does not certify a pull request or every feature described here. Check the [Releases page](https://github.com/yuxelmurat/LumiaDAM/releases) for exact files and limitations, and the [distribution validation record](docs/release-validation.md) for the current PR's tested scope and remaining release gates.
 
 The project evolves in reviewable steps. The local AI organizer, CADCraft editing, and 3ds Max merge workflow are explicitly experimental. Renderer/plugin conversion, full DWG editing fidelity, and broad compatibility with every file format are not guaranteed.
 
 ## Download and run
 
 1. Open [LumiaDAM Releases](https://github.com/yuxelmurat/LumiaDAM/releases).
-2. Download `LumiaDAM_0.1.0_x64-portable.exe` from release `v0.1.0`.
-3. Run the portable application on Windows 10/11.
+2. Download `LumiaDAM_0.1.1_x64-setup.exe` from release `v0.1.1`.
+3. Run the installer on Windows x64.
 
-This is the currently published portable build, not a setup installer. Back up valuable libraries before evaluating any in-development file operation.
+This package is an installer and is not code-signed; Windows SmartScreen may warn. Back up valuable libraries before evaluating in-development file operations. The current source packages the optional Python preview script and prerequisite list, but does not embed a Python runtime. Network source files cannot be deleted from LumiaDAM on Windows; catalog-only removal keeps the source file. See the validation record for setup requirements.
 
 ## Build from source
 

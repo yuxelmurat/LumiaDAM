@@ -91,6 +91,7 @@ export function ConfirmDeleteDialog({
           ) : isAsset ? (
             <p className={styles.subText}>
               This will move the file to the <strong style={{ color: 'var(--color-text-main, #ffffff)' }}>Recycle Bin</strong> on your system and remove it from LumiaDAM.
+              {' '}If the Recycle Bin is unavailable, the file and catalog entry will be kept.
             </p>
           ) : (
             <p className={styles.subText}>

@@ -40,21 +40,32 @@ jobs:
           version: 12
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Typecheck all workspace packages
+        run: pnpm typecheck
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
       - name: Install PhotoCraft web builder
-        run: cargo install trunk --version 0.21.14 --locked
+        run: |
+          curl --fail --location --retry 3 https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz --output "$RUNNER_TEMP/trunk.tar.gz"
+          echo "f2b4680cd239693a646a2795e4633c625328d7b2a044fbe749fa3a2fe9e7036b  $RUNNER_TEMP/trunk.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/trunk.tar.gz" -C "$HOME/.cargo/bin" trunk
+          trunk --version
       - name: Test frontend behavior
         run: pnpm --filter @lumiadam/desktop test
       # Note: vite:build in apps/desktop already executes "tsc -b && vite build",
       # validating all TypeScript types before generating the Vite build.
       - name: Build frontend bundle
         run: pnpm --filter @lumiadam/desktop vite:build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: apps/desktop/dist
+          if-no-files-found: error
 
   # ── Rust backend ──────────────────────────────────────────────────────────
   rust:
@@ -73,12 +84,11 @@ jobs:
       - name: Cargo clippy
         run: cargo clippy --all-targets -- -D warnings
         working-directory: apps/desktop/src-tauri
-      - name: Test catalog storage and migration
-        run: cargo test --lib storage::tests
+      - name: Test backend behavior
+        run: cargo test --lib
         working-directory: apps/desktop/src-tauri
-      - name: Test editor export protection
-        run: cargo test --lib commands::editor::tests
-        working-directory: apps/desktop/src-tauri
+      - name: Test cleanup data protection
+        run: cargo test --manifest-path tools/cleanup/Cargo.toml
 
   # ── Python preview engine ────────────────────────────────────────────────
   python:
@@ -90,5 +100,72 @@ jobs:
       # without needing python setup or pip install
       - uses: astral-sh/ruff-action@v3
         with:
-          args: "check"
-          src: "packages/preview-engine/"
+          version: '0.17.0'
+          args: 'check'
+          src: 'packages/preview-engine/'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install preview test dependency
+        run: python -m pip install Pillow==10.4.0
+      - name: Test preview worker protocol
+        run: python packages/preview-engine/test_worker.py
+
+  windows-package:
+    name: Windows installer build
+    needs: frontend
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'apps/desktop/src-tauri -> target'
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: apps/desktop/dist
+      # Ön yüz aynı workflow'da üretildi; Windows'ta tekrar WASM derlenmez.
+      - name: Build NSIS installer
+        shell: pwsh
+        run: |
+          $configPath = Join-Path $env:RUNNER_TEMP 'tauri-build.json'
+          '{"build":{"beforeBuildCommand":""}}' | Set-Content -LiteralPath $configPath -Encoding utf8
+          pnpm --filter @lumiadam/desktop exec tauri build --bundles nsis --config $configPath
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+  windows-install-smoke:
+    name: Windows install and uninstall smoke
+    needs: windows-package
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: ${{ runner.temp }}/installer
+      # Ayrı runner'da yalnız installer kullanılır; geliştirici PATH'i uygulamaya aktarılmaz.
+      - name: Install, launch, reinstall and uninstall
+        shell: pwsh
+        run: |
+          $installer = @(Get-ChildItem -LiteralPath "$env:RUNNER_TEMP/installer" -Filter '*-setup.exe')
+          if ($installer.Count -ne 1) { throw 'Exactly one installer is required' }
+          ./scripts/test-windows-installer.ps1 -InstallerPath $installer[0].FullName -ReportPath "$env:RUNNER_TEMP/installer-report.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-install-evidence
+          path: ${{ runner.temp }}/installer-report.json
+          if-no-files-found: error
