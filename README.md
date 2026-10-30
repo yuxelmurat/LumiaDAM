@@ -206,3 +206,4 @@ Third-party components remain subject to their respective licenses. LumiaDAM pin
 <div align="center">
   Built for artists, archivists, and studios whose folders are already the database.
 </div>
+
