@@ -96,6 +96,7 @@ export interface AiBulkApplyResult {
 }
 
 export const api = {
+  acknowledgeCloseToTray: () => invoke<void>('acknowledge_close_to_tray'),
   getLocalAiSettings: () => invoke<AiOverview>('get_local_ai_settings'),
   saveLocalAiSettings: (settings: AiSettings) => invoke<AiOverview>('save_local_ai_settings', { settings }),
   getLocalAiStatus: () => invoke<AiStatus>('get_local_ai_status'),

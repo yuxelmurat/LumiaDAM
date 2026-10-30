@@ -23,9 +23,9 @@ const section = (text, start, end, replacement) => {
   return text.slice(0, from) + replacement + text.slice(to);
 };
 const configs = {
-  pdfcraft: { channel: 'lumiadam-pdf-v1', inputs: ['pdf'], outputs: ['pdf'], version: '0.7.1' },
+  pdfcraft: { channel: 'lumiadam-pdf-v1', inputs: ['pdf'], outputs: ['pdf'], version: '0.15.0' },
   vectorcraft: { channel: 'lumiadam-vector-v1', inputs: ["svg","svgz","pdf","ai","vectorcraft","drawcraft","jpg","jpeg","png","webp","bmp","tif","tiff","gif"],
-    outputs: ["svg","svgz","pdf","vectorcraft","jpg","jpeg","png","webp"], version: '0.10.0' },
+    outputs: ["svg","svgz","pdf","vectorcraft","jpg","jpeg","png","webp"], version: '0.18.0' },
 };
 if (!process.argv.includes('--source-only') && !process.argv.some(arg => Object.hasOwn(configs, arg))) {
   execFileSync(process.execPath, [resolve(root, 'scripts/prepare-photocraft.mjs')], { cwd: root, stdio: 'inherit' });
@@ -43,7 +43,7 @@ for (const [name, config] of Object.entries(configs)) {
   const manifest = JSON.stringify({ ...pin, ...config, fingerprint });
   if (!process.argv.includes('--force') && existsSync(stamp) && existsSync(resolve(output, 'index.html')) &&
       readFileSync(stamp, 'utf8') === manifest) continue;
-  const source = resolve(root, '.cache', name, 'source');
+  const source = resolve(root, '.cache', name, pin.commit);
   if (!existsSync(resolve(source, '.git'))) {
     mkdirSync(dirname(source), {recursive:true});
     run('git', ['clone','--no-checkout','--depth','1',pin.repository,source]);
@@ -65,8 +65,9 @@ for (const [name, config] of Object.entries(configs)) {
       'pub fn artcraft_mark(ui: &mut egui::Ui, size: f32) -> Response { ui.allocate_response(egui::vec2(0.0, size), egui::Sense::hover()) }\n\n');
     writeChanged(resolve(source,'crates/ui-egui/src/widgets.rs'),widgets);
     let lib = upstream('crates/ui-egui/src/lib.rs');
-    lib = replace(lib,'    pub fn open_dialog(&mut self) {',
-      '    pub fn open_dialog(&mut self) {\n        if self.host_save.is_some() { self.notify(if self.language == "tr" { "LumiaDAM Kütüphaneler bölümünden başka bir PDF seçin." } else { "Choose another PDF in LumiaDAM Libraries." }); return; }');
+    const openDialog = '    pub fn open_dialog(&mut self) {';
+    if (lib.includes(openDialog)) lib = replace(lib,openDialog,
+      `${openDialog}\n        if self.host_save.is_some() { self.notify(if self.language == "tr" { "LumiaDAM Kütüphaneler bölümünden başka bir PDF seçin." } else { "Choose another PDF in LumiaDAM Libraries." }); return; }`);
     writeChanged(resolve(source,'crates/ui-egui/src/lib.rs'),lib);
   } else {
     let web = upstream(`${webDir}/src/web.rs`);
@@ -75,8 +76,30 @@ for (const [name, config] of Object.entries(configs)) {
       '                let ctx = &cc.egui_ctx;\n                lumiadam_host::install(host.inbox.clone(), ctx.clone());');
     web = replace(web,'                Ok(Box::new(WebShell { app: Some(app), host, canvas: page, loss }))',
       '                let mut app = app;\n                app.session.prefs.interface_language = lumiadam_host::language();\n                Ok(Box::new(WebShell { app: Some(app), host, canvas: page, loss }))');
-    web = section(web,'        let dropped = ctx.input_mut','        app.logic(ctx);',
-      '        if ctx.input_mut(|i| !std::mem::take(&mut i.raw.dropped_files).is_empty()) { lumiadam_host::open_notice(); }\n        app.session.prefs.interface_language = lumiadam_host::language();\n');
+    web = section(web,'            let dropped = ctx.input_mut','            app.ui(ui);',
+      `            let dropped = ctx.input_mut(|i| std::mem::take(&mut i.raw.dropped_files));
+            if !dropped.is_empty() {
+                let at = self.host.drag.take();
+                let z = ctx.zoom_factor();
+                let (pos, shift) = (at.map(|(x, y, _)| egui::pos2(x / z, y / z)), at.is_some_and(|a| a.2));
+                for f in dropped {
+                    let name = f.path().file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "dropped".into());
+                    let target = app.drop_target(&name, pos, shift);
+                    let (inbox, place_inbox, repaint) = (self.host.inbox.clone(), self.host.place_inbox.clone(), ctx.clone());
+                    wasm_bindgen_futures::spawn_local(async move {
+                        match f.bytes_async().await {
+                            Ok(bytes) => match target {
+                                DropTarget::Place(d) => place_inbox.lock().unwrap_or_else(|e| e.into_inner()).push(PlaceArrival { name, bytes, drop: Some(d) }),
+                                DropTarget::Open => inbox.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes)),
+                            },
+                            Err(e) => log::error!("couldn't read dropped file {name}: {e}"),
+                        }
+                        repaint.request_repaint();
+                    });
+                }
+            }
+            app.session.prefs.interface_language = lumiadam_host::language();
+`);
     web = section(web,'        open_async: Some(Box::new(move || {','        download: Some',
       '        open_async: Some(Box::new(move || { lumiadam_host::open_notice(); })),\n');
     web = replace(web,'download(name, bytes)','lumiadam_host::write(name, bytes)');

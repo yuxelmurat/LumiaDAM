@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const pin = JSON.parse(readFileSync(resolve(root, 'integrations/cadcraft/upstream.json'), 'utf8'));
 const cache = resolve(root, '.cache/cadcraft');
-const source = resolve(cache, 'source');
+const source = resolve(cache, pin.commit);
 const output = resolve(root, 'apps/desktop/public/cadcraft');
 const stamp = resolve(output, 'upstream.json');
 const run = (bin, args, cwd = root) => execFileSync(bin, args, { cwd, stdio: 'inherit', env: {

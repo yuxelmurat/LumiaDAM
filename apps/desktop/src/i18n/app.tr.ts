@@ -1,5 +1,10 @@
 // Görünür metinler çevrilir; dosya adları, yollar ve kayıt anahtarları korunur.
 export const appTr: Record<string, string> = {
+  "LumiaDAM will stay in the tray": "LumiaDAM sistem tepsisinde çalışmaya devam edecek",
+  "LumiaDAM will keep running in the system tray. Use the tray icon to reopen it, or choose Exit there to close it completely. This notice appears only once.": "LumiaDAM sistem tepsisinde çalışmaya devam edecek. Yeniden açmak için tepsi simgesine tıklayın; tamamen kapatmak için tepsi menüsünden Çıkış’ı seçin. Bu bilgilendirme yalnızca bir kez gösterilir.",
+  "Understood — keep in tray": "Anladım, tepsiye küçült",
+  "Could not save preference": "Tercih kaydedilemedi",
+  "LumiaDAM could not save the tray preference. The window will remain open.": "Tepsi tercihi kaydedilemedi. Uygulama penceresi açık kalacak.",
   "Copied file path to clipboard": "Dosya yolu panoya kopyalandı",
   "Added to favorites": "Favorilere eklendi",
   "Removed from favorites": "Favorilerden çıkarıldı",

@@ -19,7 +19,9 @@ const manifest = JSON.stringify({ ...pin, fingerprint });
 const writeChanged = (path, text) => {
   if (!existsSync(path) || readFileSync(path, 'utf8') !== text) writeFileSync(path, text);
 };
-const run = (bin, args, cwd = root) => execFileSync(bin, args, { cwd, stdio: 'inherit', env: { ...process.env, NO_COLOR: 'true' } });
+const run = (bin, args, cwd = root) => execFileSync(bin, args, { cwd, stdio: 'inherit', env: {
+  ...process.env, NO_COLOR: 'true', CARGO_TARGET_DIR: resolve(root, '.cache/craft-target'),
+} });
 const replace = (text, before, after) => {
   if (!text.includes(before)) throw new Error(`PhotoCraft adapter no longer matches upstream: ${before}`);
   return text.replace(before, after);
@@ -45,12 +47,12 @@ let web = upstream('apps/photocraft-web/src/web.rs');
 web = replace(web, 'type Inbox =', '#[path = "lumiadam_host.rs"]\nmod lumiadam_host;\n\ntype Inbox =');
 web = replace(web, 'let served: Served = Arc::default();', 'lumiadam_host::install(inbox.clone(), cc.egui_ctx.clone());\n                    let served: Served = Arc::default();');
 web = replace(web, 'download(path, bytes)', 'lumiadam_host::write(path, bytes)');
-web = replace(web, 'let mut app = PhotocraftApp::new(session, services(inbox.clone()));', 'let mut app = PhotocraftApp::new(session, services(inbox.clone()));\n                    app.session.edit_prefs(|prefs| prefs.interface.language = lumiadam_host::language());');
+web = replace(web, 'let mut app = PhotocraftApp::new(session, services(inbox.clone(), place_inbox.clone(), drag_pos_service(pen_target.clone(), drag)));', 'let mut app = PhotocraftApp::new(session, services(inbox.clone(), place_inbox.clone(), drag_pos_service(pen_target.clone(), drag)));\n                    app.session.edit_prefs(|prefs| prefs.interface.language = lumiadam_host::language());');
 web = replaceSection(web, '/// Everything File', 'const CANVAS_ID', '');
 web = replaceSection(web, '        let dropped = ctx.input_mut', '        self.serve_fonts(ctx);',
   '        if ctx.input_mut(|i| !std::mem::take(&mut i.raw.dropped_files).is_empty()) { lumiadam_host::open_notice(); }\n');
 web = replaceSection(web, '            // The browser\'s file picker', '            // No save dialog',
-  '            FileDialogRequest::Open { .. } => { lumiadam_host::open_notice(); reply.send(None); },\n');
+  '            FileDialogRequest::Open { .. } => { lumiadam_host::open_notice(); reply.send(None); },\n            FileDialogRequest::Folder { .. } => reply.send(None),\n');
 web = replaceSection(web, '/// Trigger a browser download', '/// Rust bindings to the browser', '');
 writeChanged(resolve(source, 'apps/photocraft-web/src/web.rs'), web);
 writeChanged(resolve(source, 'apps/photocraft-web/src/lumiadam_host.rs'), readFileSync(resolve(integration, 'host.rs'), 'utf8'));

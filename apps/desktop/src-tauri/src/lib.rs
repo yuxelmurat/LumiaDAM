@@ -14,7 +14,11 @@ pub mod preferences;
 pub mod windows_thumbnail;
 
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Emitter, Manager,
+};
 use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 
@@ -25,6 +29,14 @@ pub struct AppState {
     pub db: Database,
     pub watcher: Mutex<LibraryWatcher>,
     pub app_handle: tauri::AppHandle,
+}
+
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -74,6 +86,28 @@ pub fn run() {
             });
 
             app.manage(state.clone());
+
+            let turkish = crate::preferences::get_app_language().is_ok_and(|language| language == "tr");
+            let open = MenuItem::with_id(app, "open", if turkish { "LumiaDAM'ı aç" } else { "Open LumiaDAM" }, true, None::<&str>)?;
+            let exit = MenuItem::with_id(app, "exit", if turkish { "Çıkış" } else { "Exit" }, true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open, &exit])?;
+            TrayIconBuilder::new()
+                .icon(app.default_window_icon().expect("LumiaDAM window icon is configured").clone())
+                .tooltip("LumiaDAM")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "open" => show_main_window(app),
+                    "exit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if matches!(event, TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. }) {
+                        show_main_window(tray.app_handle());
+                    }
+                })
+                .build(app)?;
+
             crate::local_ai::resume_configured_schedule(state.clone());
             
             // Start the background preview worker queue
@@ -87,6 +121,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             preferences::get_app_language,
             preferences::set_app_language,
+            preferences::acknowledge_close_to_tray,
             local_ai::get_local_ai_settings,
             local_ai::save_local_ai_settings,
             local_ai::get_local_ai_status,
@@ -145,6 +180,16 @@ pub fn run() {
             commands::workflow::find_duplicates,
             commands::workflow::cancel_duplicate_scan,
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                if crate::preferences::close_to_tray_acknowledged() {
+                    let _ = window.hide();
+                } else {
+                    let _ = window.emit("app:close-to-tray-reminder", ());
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

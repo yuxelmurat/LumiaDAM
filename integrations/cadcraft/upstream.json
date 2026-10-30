@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/storytold/cadcraft.git",
-  "commit": "0b32c2e6a14c761835ea62c01e7b20845971d781",
-  "version": "0.9.0",
+  "commit": "8d1bd19ee29aa3a7f7d8730214fa8d6b90a4e7a6",
+  "version": "0.14.0",
   "license": "MIT OR Apache-2.0"
 }

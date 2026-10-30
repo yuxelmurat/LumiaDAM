@@ -55,6 +55,7 @@ export default function App() {
   const [assetsToDelete, setAssetsToDelete] = useState<string[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const toastTimeoutRef = useRef<number | null>(null);
+  const trayReminderOpenRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -63,6 +64,35 @@ export default function App() {
       if (active && value.installRequested && !value.settings.setupComplete) setWorkspace('local-ai');
     }).catch(console.error);
     return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const listener = listen('app:close-to-tray-reminder', async () => {
+      if (!active || trayReminderOpenRef.current) return;
+      trayReminderOpenRef.current = true;
+      try {
+        await message(tr("LumiaDAM will keep running in the system tray. Use the tray icon to reopen it, or choose Exit there to close it completely. This notice appears only once."), {
+          title: tr("LumiaDAM will stay in the tray"),
+          kind: 'info',
+          buttons: { ok: tr("Understood — keep in tray") },
+        });
+        await api.acknowledgeCloseToTray();
+      } catch (error) {
+        console.error('Tray preference could not be saved', error);
+        if (active) {
+          await message(tr("LumiaDAM could not save the tray preference. The window will remain open."), {
+            title: tr("Could not save preference"), kind: 'error', buttons: { ok: tr("Close") },
+          }).catch(console.error);
+        }
+      } finally {
+        trayReminderOpenRef.current = false;
+      }
+    });
+    return () => {
+      active = false;
+      listener.then(unlisten => unlisten());
+    };
   }, []);
 
   useEffect(() => {

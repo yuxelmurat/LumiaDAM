@@ -27,6 +27,7 @@ const CATEGORIES: &[&str] = &[
     "Bathroom",
     "Office",
     "Dining room",
+    "Dressing room",
     "Exterior",
     "Furniture & Decor",
     "Texture",
@@ -135,6 +136,7 @@ fn parse_category(value: &str) -> Result<String> {
     #[serde(deny_unknown_fields)]
     struct Classification {
         category: String,
+        confidence: f32,
     }
     ensure!(value.len() < 4096, "Model classification is too large.");
     let output: Classification = serde_json::from_str(value)?;
@@ -142,7 +144,11 @@ fn parse_category(value: &str) -> Result<String> {
         CATEGORIES.contains(&output.category.as_str()),
         "Unknown classification category."
     );
-    Ok(output.category)
+    ensure!(
+        output.confidence.is_finite() && (0.0..=1.0).contains(&output.confidence),
+        "Invalid classification confidence."
+    );
+    Ok(if output.confidence >= 0.8 { output.category } else { "Other".into() })
 }
 
 fn validate_settings(settings: &mut AiSettings) -> Result<()> {
@@ -619,6 +625,12 @@ async fn record_suggestion(pool: &sqlx::SqlitePool, mut suggestion: AiSuggestion
 
 async fn collect_suggestions(db: &crate::db::Database, model: &str) -> Result<()> {
     retire_obsolete_similarity_data(db).await?;
+    let active_prefix = format!("category:{model}:");
+    sqlx::query("UPDATE ai_suggestions SET status='dismissed',updated_at=? WHERE status='pending' AND id LIKE 'category:%' AND substr(id,1,?)<>?")
+        .bind(chrono::Utc::now().timestamp_millis())
+        .bind(active_prefix.len() as i64)
+        .bind(&active_prefix)
+        .execute(&db.master_pool).await?;
     let mut categories: HashMap<String, Vec<AiItem>> = HashMap::new();
     for library in db.get_all_libraries().await {
         let exists: i64 = sqlx::query_scalar(
@@ -665,7 +677,7 @@ async fn collect_suggestions(db: &crate::db::Database, model: &str) -> Result<()
         } else {
             category.clone()
         };
-        record_suggestion(&db.master_pool, AiSuggestion { id: format!("category:{category}"), kind: "collection".into(),
+        record_suggestion(&db.master_pool, AiSuggestion { id: format!("category:{model}:{category}"), kind: "collection".into(),
             title: format!("Group {name} assets across libraries"), reason: "Suggested from cached previews. Review the files; originals and model references will stay in place.".into(),
             asset_ids: vec![], collection_name: Some(name), status: "pending".into(), total_items: items.len(), items }).await?;
     }
@@ -674,7 +686,7 @@ async fn collect_suggestions(db: &crate::db::Database, model: &str) -> Result<()
 
 async fn analyze(db: &crate::db::Database, settings: &AiSettings, manual: bool) -> Result<()> {
     ensure_tables(&db.master_pool).await?;
-    let key = format!("v2:{}:{}", settings.provider, settings.model);
+    let key = format!("v3:{}:{}", settings.provider, settings.model);
     let mut catalog_assets = 0usize;
     let mut pending_assets = 0usize;
     let mut without_preview = 0usize;
@@ -1433,7 +1445,7 @@ mod tests {
             ("/api/ps", serde_json::json!({"models":[]})),
             (
                 "/api/chat",
-                serde_json::json!({"message":{"content":"{\"category\":\"Kitchen\"}"}}),
+                serde_json::json!({"message":{"content":"{\"category\":\"Kitchen\",\"confidence\":0.95}"}}),
             ),
             ("/api/generate", serde_json::json!({"done":true})),
         ])
@@ -1445,7 +1457,13 @@ mod tests {
             setup_complete: true,
             ..Default::default()
         };
+        let outdated = suggestion("legacy-library", "legacy-asset", "A:/old-room.jpg".into());
+        ensure_tables(&db.master_pool).await.unwrap();
+        record_suggestion(&db.master_pool, outdated).await.unwrap();
         analyze(&db, &settings, true).await.unwrap();
+        let old_status: String = sqlx::query_scalar("SELECT status FROM ai_suggestions WHERE id LIKE 'category:Kitchen:%'")
+            .fetch_one(&db.master_pool).await.unwrap();
+        assert_eq!(old_status, "dismissed", "eski yanlış sınıflandırma önerileri yeni analizden sonra görünmemeli");
         let status = get_local_ai_status();
         assert_eq!((status.catalog_assets, status.analyzed_assets, status.pending_assets, status.without_preview), (2, 1, 0, 1));
         let log = serde_json::to_value(activity::read().unwrap()).unwrap();
@@ -1461,7 +1479,7 @@ mod tests {
         // Sahte sunucu artık kapalı: yeniden analiz model bağlantısı kurarsa bu çağrı hata verir.
         analyze(&db, &settings, true).await.unwrap();
         let payload: String = sqlx::query_scalar(
-            "SELECT payload FROM ai_suggestions WHERE id LIKE 'category:Kitchen:%'",
+            "SELECT payload FROM ai_suggestions WHERE id LIKE 'category:v3:ollama:%:Kitchen:%'",
         )
         .fetch_one(&db.master_pool)
         .await
@@ -1557,13 +1575,13 @@ mod tests {
 
     #[test]
     fn model_output_is_only_a_category_never_an_executable_plan() {
-        assert_eq!(
-            parse_category(r#"{"category":"Kitchen"}"#).unwrap(),
-            "Kitchen"
-        );
+        assert_eq!(parse_category(r#"{"category":"Kitchen","confidence":0.95}"#).unwrap(), "Kitchen");
+        assert_eq!(parse_category(r#"{"category":"Bedroom","confidence":0.52}"#).unwrap(), "Other");
+        assert_eq!(parse_category(r#"{"category":"Dressing room","confidence":0.93}"#).unwrap(), "Dressing room");
         for value in [
             r#"{"category":"../../outside"}"#,
             r#"{"category":"Kitchen","code":"delete"}"#,
+            r#"{"category":"Kitchen","confidence":1.5}"#,
             "not JSON",
         ] {
             assert!(parse_category(value).is_err());

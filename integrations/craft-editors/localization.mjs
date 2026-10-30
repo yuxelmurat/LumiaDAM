@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -52,14 +52,18 @@ export function prepareTurkishCatalog({ name, source, upstream, writeChanged }) 
     missingRows: missing.length, missing }, null, 2));
   console.log(`${name}: ${additions.length} Türkçe satır eklendi, ${missing.length} kaynak satır İngilizce yedek dili kullanıyor.`);
   if (name === 'pdfcraft') return;
-  const module = upstream(`${path}/mod.rs`);
+  const moduleFile = !existsSync(resolve(source, path, 'mod.rs'))
+    ? 'crates/ui-egui/src/i18n.rs'
+    : `${path}/mod.rs`;
+  const module = upstream(moduleFile);
   const registry = /pub static LANGUAGES: \[LangInfo; (\d+)\] = \[/;
   if (!registry.test(module)) throw new Error(`${name}: Dil kayıt yapısı değişmiş.`);
-  const catalog = name === 'photocraft' ? 'catalog!("tr")' : 'include_str!("tr.tsv")';
+  const catalog = name === 'photocraft' ? 'catalog!("tr")' :
+    `include_str!("${moduleFile.endsWith('/i18n.rs') ? 'i18n/' : ''}tr.tsv")`;
   let patched = module.replace(registry, (_, count) => `pub static LANGUAGES: [LangInfo; ${Number(count) + 1}] = [`);
   const end = patched.indexOf('\n];', patched.indexOf('pub static LANGUAGES:'));
   if (end < 0) throw new Error(`${name}: Dil kayıt dizisinin sonu bulunamadı.`);
   // İngilizce sabiti LANGUAGES[0] kullandığından Türkçe kaydı en sona eklenir.
   patched = patched.slice(0, end) + `\n    LangInfo { code: "tr", name: "Türkçe", source: ${catalog}, plural: plural_none, complete_menus: ${missing.length === 0}, catalog: OnceLock::new() },` + patched.slice(end);
-  writeChanged(resolve(source, path, 'mod.rs'), patched);
+  writeChanged(resolve(source, moduleFile), patched);
 }

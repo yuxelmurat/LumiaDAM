@@ -133,6 +133,7 @@ export const aiTr: Record<string, string> = {
   'Bathroom': 'Banyo',
   'Office': 'Ofis',
   'Dining room': 'Yemek odası',
+  'Dressing room': 'Giyinme odası',
   'Exterior': 'Dış mekân',
   'Texture': 'Doku',
   'Furniture & Decor': 'Mobilya ve Dekorasyon',
