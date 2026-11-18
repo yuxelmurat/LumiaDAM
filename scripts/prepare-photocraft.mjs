@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const integration = resolve(root, 'integrations/photocraft');
 const pin = JSON.parse(readFileSync(resolve(integration, 'upstream.json'), 'utf8'));
-const source = resolve(process.env.PHOTOCRAFT_SOURCE || resolve(root, '.cache/photocraft', pin.commit));
+const source = resolve(root, '.cache/photocraft', pin.commit);
 const output = resolve(root, 'apps/desktop/public/photocraft');
 const stamp = resolve(output, 'upstream.json');
 const fingerprint = createHash('sha256').update(JSON.stringify(pin))
@@ -58,7 +58,7 @@ html = replace(html, '</head>', '<script src="bridge.js"></script>\n<link data-t
 writeChanged(resolve(source, 'apps/photocraft-web/index.html'), html);
 writeChanged(resolve(source, 'apps/photocraft-web/bridge.js'), readFileSync(resolve(integration, 'bridge.js'), 'utf8'));
 if (process.argv.includes('--source-only')) process.exit(0);
-run(process.env.TRUNK || 'trunk', ['build', '--release', '--dist', output], resolve(source, 'apps/photocraft-web'));
+run('trunk', ['build', '--release', '--dist', output], resolve(source, 'apps/photocraft-web'));
 for (const name of ['LICENSE-MIT', 'LICENSE-APACHE', 'ATTRIBUTION.md']) writeFileSync(resolve(output, name), upstream(name));
 // Gömülü ikonlar, sözlük ve renk paletleri kendi lisans bildirimlerini de taşır.
 const notices = execFileSync('git', ['ls-tree', '-r', '--name-only', pin.commit], { cwd: source, encoding: 'utf8' }).split('\n')
