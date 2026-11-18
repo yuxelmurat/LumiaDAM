@@ -14,14 +14,6 @@
     "node": ">=20",
     "pnpm": ">=9"
   },
-  "pnpm": {
-    "overrides": {
-      "brace-expansion@1": "1.1.21",
-      "brace-expansion@5": "5.0.12",
-      "minimatch@>=7.0.0 <11.0.1": "11.0.1",
-      "source-map-js": "1.2.2"
-    }
-  },
   "devDependencies": {
     "typescript": "^5.6.3",
     "prettier": "^3.3.3",
