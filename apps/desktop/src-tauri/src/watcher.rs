@@ -79,10 +79,7 @@ pub async fn index_paths(db: &Database, library_id: &str, paths: &[String]) -> R
                     return false;
                 }
                 let file_name = e.file_name().to_string_lossy();
-                if e.file_type().is_dir() && file_name == ".opendam" {
-                    return false;
-                }
-                true
+                !(e.file_type().is_dir() && file_name == ".opendam")
             });
 
         for entry in walker {
